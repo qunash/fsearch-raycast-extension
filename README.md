@@ -46,7 +46,7 @@ fsearch keeps the index it built before access was granted and only replays late
 
 Run **Manage Fallback Commands** in Raycast (or open Settings → Launcher → Fallback Commands), add **Search Files — FSearch**, and move it to your preferred position. When Raycast shows **Use with**, selecting this command searches the text you already typed.
 
-Fallback registration is a Raycast user setting; there is no public extension API to enable it automatically on installation. The command accepts `fallbackText` and an optional `query` argument, so it also works when launched with text directly, including through deeplinks.
+Fallback registration is a Raycast user setting; there is no public extension API to enable it automatically on installation. The command accepts `fallbackText`, so it also works when launched as a fallback with the typed text pre-filled.
 
 ## Preferences
 
