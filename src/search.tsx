@@ -102,6 +102,7 @@ const fileTypes = [
   { title: "Audio", value: "type:audio", icon: Icon.Music },
   { title: "Video", value: "type:video", icon: Icon.Video },
   { title: "Archives", value: "type:archive", icon: Icon.Box },
+  { title: "Fonts", value: "type:font", icon: Icon.Text },
 ];
 const starters = [
   {
@@ -207,9 +208,13 @@ Use **⌘ ⇧ F** to change the search folder, or **⌘ F** on a result to searc
 | Large files | \`size:>100mb\` |
 | In a folder | \`readme in:~/Developer\` |
 | Text inside files | \`ext:ts grep:useEffect\` |
+| A regex inside files | \`regex:fn\\s+\\w+_dir\` |
 | Symbol definitions | \`sym:apply_dir\` |
+| Several types or extensions | \`type:image,video\` · \`ext:png,jpg\` |
+| A size or age range | \`size:1mb..10mb\` · \`mtime:2h..3d\` |
+| A regex on the name or path | \`re:^IMG_\\d+\` · \`path:node_modules\` |
 
-Use \`'exact\`, \`^prefix\`, \`suffix$\`, and \`!exclude\` for more control. Content search is smart-case. The filter menu adds a file-type filter to your query.
+Use \`'exact\`, \`^prefix\`, \`suffix$\`, \`!exclude\`, and \`"quoted phrases"\` for more control. Words of five or more letters forgive one typo. \`mtime:\` takes s, m, h, d, w, mo, and y. Content search is smart-case. The filter menu adds a file-type filter to your query.
 
 ## Search protected folders
 

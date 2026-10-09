@@ -59,17 +59,25 @@ Fallback registration is a Raycast user setting; there is no public extension AP
 
 ## Search
 
-| Query                   | Finds                        |
-| ----------------------- | ---------------------------- |
-| `quarterly report`      | Fuzzy filename matches       |
-| `ext:pdf invoice`       | PDF invoices                 |
-| `readme in:~/Developer` | Files within a folder        |
-| `type:image mtime:<7d`  | Recent images                |
-| `size:>100mb`           | Large files                  |
-| `ext:ts grep:useEffect` | Text inside TypeScript files |
-| `sym:apply_dir`         | Symbol definitions           |
+| Query                   | Finds                                      |
+| ----------------------- | ------------------------------------------ |
+| `quarterly report`      | Fuzzy filename matches                     |
+| `ext:pdf invoice`       | PDF invoices                               |
+| `readme in:~/Developer` | Files within a folder                      |
+| `type:image mtime:<7d`  | Recent images                              |
+| `size:>100mb`           | Large files                                |
+| `ext:ts grep:useEffect` | Text inside TypeScript files               |
+| `regex:fn\s+\w+_dir`    | A regex inside files                       |
+| `sym:apply_dir`         | Symbol definitions                         |
+| `type:image,video`      | Several types (or `ext:png,jpg`)           |
+| `size:1mb..10mb`        | A size range (`mtime:2h..3d` for age)      |
+| `re:^IMG_\d+`           | A regex on the name (`path:` for the path) |
 
-The type menu adds a filter to the query. Leave it on Everything when writing your own `type:` or `kind:` filters. The configured result limit overrides query `limit:`. The current search folder overrides query `in:`; choose Entire Mac to let the query supply its own folder. Sorting applies to the fetched results, not to the entire index. Select Show More in the list (or press ⌘ ⇧ M) to expand the set before sorting. Size and modification-date sorting are unavailable for content matches because fsearch does not return that metadata. Content search may return partial results while indexing or when its time budget is reached; the section header shows this status. Narrow the query and retry.
+Plain words are fuzzy, and words of five or more letters forgive one typo. `'exact`, `^prefix`, `suffix$`, `!exclude`, and `"quoted phrases"` tighten a match. `mtime:` accepts s, m, h, d, w, mo, and y. The type menu offers documents, images, folders, code, applications, audio, video, archives, and fonts.
+
+The type menu adds a filter to the query. Leave it on Everything when writing your own `type:` or `kind:` filters. The configured result limit overrides query `limit:`. The current search folder overrides query `in:`; choose Entire Mac to let the query supply its own folder. Sorting applies to the fetched results, not to the entire index. Select Show More in the list (or press ⌘ ⇧ M) to expand the set before sorting. Size and modification-date sorting are unavailable for content matches because fsearch does not return that metadata. Content search may return partial results while indexing or when its read budget is reached; the section header then shows how many candidate files were read. Show More raises the budget along with the limit, so selecting it usually completes the search.
+
+The extension talks to the fsearch daemon over its Unix socket and keeps the connection open, so a search costs about a millisecond. It falls back to `fsearch stdio` only when no daemon is running, which also starts one.
 
 | Shortcut | Action                            |
 | -------- | --------------------------------- |

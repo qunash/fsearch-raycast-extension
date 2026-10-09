@@ -2,6 +2,10 @@
 
 ## [Initial Version] - {PR_MERGE_DATE}
 
+- Persistent socket connection to the fsearch daemon; `fsearch stdio` is spawned only to start it.
+- Show More raises the content-search read budget, and partial results report how many candidate files were read.
+- Fonts in the type menu; the help lists regex, range, comma-list, and quoted-phrase syntax.
+
 - Fuzzy, whole-disk file search powered by a local fsearch daemon.
 - Home screen with saved searches, quick starters, and favourite places.
 - File-type filters, folder scoping, sorting, and shell wildcards such as `*.docx`.
