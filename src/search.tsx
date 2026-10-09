@@ -42,6 +42,7 @@ import {
   hasMediaDetails,
   mediaDetails,
   NATIVE_IMAGE_EXTENSIONS,
+  PLAYABLE_EXTENSIONS,
   plistContent,
   quickLookThumbnail,
   RICH_TEXT_EXTENSIONS,
@@ -286,9 +287,13 @@ function fileUrl(path: string): string {
   return pathToFileURL(path).href.replace(/\(/g, "%28").replace(/\)/g, "%29");
 }
 
-function imageMarkdown(url: string, size: ImageSize | undefined): string {
+function imageMarkdown(
+  url: string,
+  size: ImageSize | undefined,
+  maxHeight = PREVIEW_MAX_HEIGHT,
+): string {
   // Size the image from its header so wide and tall pictures both fit the pane.
-  const fit = fitPreviewSize(size, PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT);
+  const fit = fitPreviewSize(size, PREVIEW_MAX_WIDTH, maxHeight);
   return `![File preview](${url}?raycast-width=${fit.width}&raycast-height=${fit.height})`;
 }
 
@@ -448,16 +453,26 @@ async function buildPreview(
       THUMBNAIL_CACHE,
       signal,
     );
+    const playable = PLAYABLE_EXTENSIONS.includes(extension);
+    // Quick Look plays video and audio and lets the file be dragged to other apps.
+    const playHint = playable ? "\n\n*Press **⌘ Y** to play.*" : "";
     if (thumbnail) {
       return {
         ...base,
-        markdown: imageMarkdown(fileUrl(thumbnail.path), thumbnail.size),
+        markdown:
+          imageMarkdown(
+            fileUrl(thumbnail.path),
+            thumbnail.size,
+            playable ? PREVIEW_MAX_HEIGHT - 30 : PREVIEW_MAX_HEIGHT,
+          ) + playHint,
         details: await details,
       };
     }
     return {
       ...base,
-      markdown: quickLookHint(path, "file"),
+      markdown: playable
+        ? `*No inline preview.* Press **⌘ Y** to play.`
+        : quickLookHint(path, "file"),
       details: await details,
     };
   }

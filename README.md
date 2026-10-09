@@ -71,22 +71,22 @@ Fallback registration is a Raycast user setting; there is no public extension AP
 
 The type menu adds a filter to the query. Leave it on Everything when writing your own `type:` or `kind:` filters. The configured result limit overrides query `limit:`. The current search folder overrides query `in:`; choose Entire Mac to let the query supply its own folder. Sorting applies to the fetched results, not to the entire index. Select Show More in the list (or press ⌘ ⇧ M) to expand the set before sorting. Size and modification-date sorting are unavailable for content matches because fsearch does not return that metadata. Content search may return partial results while indexing or when its time budget is reached; the section header shows this status. Narrow the query and retry.
 
-| Shortcut | Action                            |
-| -------- | --------------------------------- |
-| Return   | Open file, folder, or application |
-| ⌘ Return | Reveal in Finder                  |
-| ⌘ Y      | Quick Look                        |
-| ⌘ ⇧ C    | Copy path                         |
-| ⌃ X      | Move to Trash (asks first)        |
-| ⌘ D      | Toggle details / content matches  |
-| ⌘ R      | Refresh search                    |
-| ⌘ ⇧ S    | Save / remove current search      |
-| ⌘ ⇧ H    | Return to search home             |
-| ⌘ ⇧ F    | Choose search folder              |
-| ⌘ F      | Search selected result’s folder   |
-| ⌘ ⇧ O    | Sort loaded results               |
-| ⌘ ⇧ M    | Show more results                 |
-| ⌘ ⇧ R    | Rebuild the index                 |
+| Shortcut | Action                                                       |
+| -------- | ------------------------------------------------------------ |
+| Return   | Open file, folder, or application                            |
+| ⌘ Return | Reveal in Finder                                             |
+| ⌘ Y      | Quick Look (plays video and audio; drag the file from there) |
+| ⌘ ⇧ C    | Copy path                                                    |
+| ⌃ X      | Move to Trash (asks first)                                   |
+| ⌘ D      | Toggle details / content matches                             |
+| ⌘ R      | Refresh search                                               |
+| ⌘ ⇧ S    | Save / remove current search                                 |
+| ⌘ ⇧ H    | Return to search home                                        |
+| ⌘ ⇧ F    | Choose search folder                                         |
+| ⌘ F      | Search selected result’s folder                              |
+| ⌘ ⇧ O    | Sort loaded results                                          |
+| ⌘ ⇧ M    | Show more results                                            |
+| ⌘ ⇧ R    | Rebuild the index                                            |
 
 The preview keeps four metadata rows (Where, Kind, Size, Modified); Spotlight details such as page count, duration, or pixel size join the Kind row. Raycast splits the pane at a fixed point, so the image box and the text cut are sized to the markdown area above those rows. Previews use only tools shipped with macOS: `qlmanage`, `textutil`, `unzip`, `tar`, `plutil`, and `mdls`.
 
