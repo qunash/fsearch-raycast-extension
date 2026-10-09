@@ -614,6 +614,9 @@ export default function Search(props: LaunchProps) {
   } | null>(null);
   const sortRef = useRef("relevance");
   const lastSearchKey = useRef<string | undefined>(undefined);
+  // Query words of the results on screen. Previews highlight these, not the
+  // live query, so a keystroke rebuilds the preview once, with the new results.
+  const [resultTerms, setResultTerms] = useState<string[]>([]);
   const lastErrorKind = useRef<SearchError["kind"] | undefined>(undefined);
 
   // The configured default folder alone keeps the home screen; an explicit choice starts a search.
@@ -738,6 +741,7 @@ export default function Search(props: LaunchProps) {
         );
         if (!controller.signal.aborted) {
           setResult(response);
+          setResultTerms(highlightTerms(query));
           setError(undefined);
           setAutoRetries(0);
           if (lastSearchKey.current !== searchKey) {
@@ -804,7 +808,7 @@ export default function Search(props: LaunchProps) {
     sortedFiles.find((file) => file.path === selectedPath) ?? sortedFiles[0];
   const previewPath = active && showDetails ? selectedFile?.path : undefined;
   const selectedMatches = selectedFile?.matches;
-  const termsKey = highlightTerms(query).join("\u0000");
+  const termsKey = resultTerms.join("\u0000");
   const canLoadMore =
     active &&
     result !== undefined &&
