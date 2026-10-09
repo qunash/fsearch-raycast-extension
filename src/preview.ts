@@ -403,8 +403,86 @@ export function parseSpotlight(output: string): Map<string, string[]> {
 export interface SpotlightDetails {
   /** Version, page count, duration, pixel size, title, download source. */
   details?: string;
-  /** Finder tags. */
-  tags: string[];
+  /** Finder tags with the color Finder shows them in. */
+  tags: FinderTag[];
+}
+
+export interface FinderTag {
+  name: string;
+  color: TagColor;
+}
+
+/** Finder's tag palette, indexed as in the `_kMDItemUserTags` attribute. */
+export type TagColor =
+  "gray" | "green" | "purple" | "blue" | "yellow" | "red" | "orange";
+
+const TAG_COLORS: (TagColor | undefined)[] = [
+  undefined,
+  "gray",
+  "green",
+  "purple",
+  "blue",
+  "yellow",
+  "red",
+  "orange",
+];
+
+/**
+ * Finder colors a tag by its stored color index, except that files tagged
+ * through iCloud or older tools often carry index 1 for every color, and
+ * Finder then falls back to the built-in tag names. Do the same: a built-in
+ * name wins, then the stored index, then gray.
+ */
+export function finderTags(
+  names: string[],
+  stored: Map<string, number>,
+): FinderTag[] {
+  return names.map((name) => {
+    const builtIn = TAG_COLORS.find((color) => color === name.toLowerCase());
+    const index = stored.get(name);
+    const color =
+      builtIn ?? (index && index > 1 ? TAG_COLORS[index] : undefined) ?? "gray";
+    return { name, color };
+  });
+}
+
+/** Parses the `_kMDItemUserTags` entries, each "Name\n<color index>". */
+export function parseTagAttribute(json: string): Map<string, number> {
+  const stored = new Map<string, number>();
+  try {
+    const entries: unknown = JSON.parse(json);
+    if (!Array.isArray(entries)) return stored;
+    for (const entry of entries) {
+      if (typeof entry !== "string") continue;
+      const [name, index] = entry.split("\n");
+      stored.set(name, Number(index) || 0);
+    }
+  } catch {
+    // Not JSON: treat as untagged.
+  }
+  return stored;
+}
+
+/** The stored color index per tag, read from the extended attribute. */
+async function storedTagColors(
+  path: string,
+  signal?: AbortSignal,
+): Promise<Map<string, number>> {
+  try {
+    const json = await runTool(
+      "/bin/sh",
+      [
+        "-c",
+        'xattr -px com.apple.metadata:_kMDItemUserTags "$1" | xxd -r -p | plutil -convert json -o - -',
+        "sh",
+        path,
+      ],
+      signal,
+    );
+    return parseTagAttribute(json);
+  } catch {
+    return new Map();
+  }
 }
 
 /** Short facts Spotlight keeps about a file, folder, or application. */
@@ -444,9 +522,16 @@ export async function spotlightDetails(
     if (title && title !== basename(path)) parts.push(title);
     const source = downloadHost(first("kMDItemWhereFroms"));
     if (source) parts.push(`from ${source}`);
+    const tagNames = values.get("kMDItemUserTags") ?? [];
+    // The attribute read is only needed for custom tag names.
+    const stored = tagNames.every((name) =>
+      TAG_COLORS.includes(name.toLowerCase() as TagColor),
+    )
+      ? new Map<string, number>()
+      : await storedTagColors(path, signal);
     return {
       details: parts.length ? parts.join(" · ") : undefined,
-      tags: values.get("kMDItemUserTags") ?? [],
+      tags: finderTags(tagNames, stored),
     };
   } catch {
     return { tags: [] };

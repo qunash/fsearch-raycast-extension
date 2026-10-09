@@ -18,9 +18,11 @@ import {
 } from "../src/format.ts";
 import {
   downloadHost,
+  finderTags,
   folderDetails,
   formatClock,
   parseSpotlight,
+  parseTagAttribute,
 } from "../src/preview.ts";
 
 test("formats sizes and durations for humans", () => {
@@ -207,4 +209,17 @@ test("parses Spotlight output including arrays and picks download hosts", () => 
   assert.equal(downloadHost(values.get("kMDItemWhereFroms")[0]), "github.com");
   assert.equal(downloadHost("not a url"), undefined);
   assert.equal(downloadHost(undefined), undefined);
+});
+
+test("colors Finder tags by built-in name, then stored index", () => {
+  const stored = parseTagAttribute(
+    '["Green\\n1","Work\\n6","Later\\n1","Odd"]',
+  );
+  assert.deepEqual(finderTags(["Green", "Work", "Later", "Custom"], stored), [
+    { name: "Green", color: "green" },
+    { name: "Work", color: "red" },
+    { name: "Later", color: "gray" },
+    { name: "Custom", color: "gray" },
+  ]);
+  assert.equal(parseTagAttribute("nonsense").size, 0);
 });

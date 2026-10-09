@@ -42,6 +42,7 @@ import {
   ARCHIVE_EXTENSIONS,
   archiveListing,
   fileIcon,
+  FinderTag,
   folderDetails,
   NATIVE_IMAGE_EXTENSIONS,
   plistContent,
@@ -181,10 +182,20 @@ interface FilePreview {
   /** Symlink target, item or entry count, and Spotlight facts, joined with " · ". */
   details?: string;
   /** Finder tags. */
-  tags?: string[];
+  tags?: FinderTag[];
   size?: number;
   modified?: Date;
 }
+
+const TAG_COLORS: Record<FinderTag["color"], Color> = {
+  gray: Color.SecondaryText,
+  green: Color.Green,
+  purple: Color.Purple,
+  blue: Color.Blue,
+  yellow: Color.Yellow,
+  red: Color.Red,
+  orange: Color.Orange,
+};
 
 const guide = `# FSearch
 
@@ -430,13 +441,18 @@ async function buildPreview(
   const spotlight = spotlightDetails(path, signal);
   const body = await previewBody(path, info, matches, terms, signal);
   const found = await spotlight;
+  // Spotlight repeats the pixel size the image header already gave.
   const details = [
-    target && `→ ${displayPath(resolve(dirname(path), target))}`,
-    body.details,
-    found.details,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+    ...new Set(
+      [
+        target && `→ ${displayPath(resolve(dirname(path), target))}`,
+        body.details,
+        found.details,
+      ]
+        .filter((part): part is string => Boolean(part))
+        .flatMap((part) => part.split(" · ")),
+    ),
+  ].join(" · ");
   return {
     path,
     size: info.size,
@@ -1700,9 +1716,9 @@ export default function Search(props: LaunchProps) {
                           )}
                           {preview?.tags?.map((tag) => (
                             <List.Item.Detail.Metadata.TagList.Item
-                              key={tag}
-                              text={tag}
-                              color={Color.Purple}
+                              key={tag.name}
+                              text={tag.name}
+                              color={TAG_COLORS[tag.color]}
                             />
                           ))}
                           {file.matches && (
