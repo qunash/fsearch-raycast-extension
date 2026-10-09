@@ -21,7 +21,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { basename, dirname, extname, join } from "node:path";
 import { homedir } from "node:os";
-import { mkdir, open as openFile, stat } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import {
   codeBlock,
@@ -46,15 +46,16 @@ import {
   NATIVE_IMAGE_EXTENSIONS,
   plistContent,
   quickLookThumbnail,
+  readHead,
   RICH_TEXT_EXTENSIONS,
   richTextContent,
   THUMBNAIL_EXTENSIONS,
 } from "./preview";
 import {
-  DEFAULT_BINARY,
   findUnindexedProtectedFolders,
   getStatus,
   IndexStatus,
+  PROTECTED_FOLDERS,
   rebuildIndex,
   SearchError,
   SearchErrorKind,
@@ -139,7 +140,7 @@ const starters = [
 const locations = [
   { title: "Entire Mac", path: "", icon: Icon.Desktop },
   { title: "Home", path: homedir(), icon: Icon.House },
-  ...["Downloads", "Desktop", "Documents"].map((title) => ({
+  ...PROTECTED_FOLDERS.map((title) => ({
     title,
     path: join(homedir(), title),
     icon: Icon.Folder,
@@ -152,18 +153,25 @@ const sorts = [
   { title: "Largest First", value: "size" },
 ];
 const THUMBNAIL_CACHE = join(environment.supportPath, "thumbnails");
+const THUMBNAIL_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+// Created once per launch; thumbnails of files edited since are keyed by
+// mtime and never reused, so anything untouched for a month is dropped.
+const thumbnailCacheReady = (async () => {
+  await mkdir(THUMBNAIL_CACHE, { recursive: true });
+  const cutoff = Date.now() - THUMBNAIL_MAX_AGE_MS;
+  for (const name of await readdir(THUMBNAIL_CACHE)) {
+    const file = join(THUMBNAIL_CACHE, name);
+    const info = await stat(file).catch(() => undefined);
+    if (info && info.atimeMs < cutoff && info.mtimeMs < cutoff) {
+      await rm(file, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+})().catch((cause) => console.warn("Thumbnail cache:", cause));
 
 interface SavedSearch {
   query: string;
   filter: string;
   scope: string;
-}
-
-interface Preferences {
-  binaryPath: string;
-  searchRoot?: string;
-  resultLimit: string;
-  showDetails: boolean;
 }
 
 interface FilePreview {
@@ -273,17 +281,6 @@ function sortFiles(files: SearchFile[], sort: string) {
 }
 
 /** Reads at most `limit` bytes from the start of a file. */
-async function readHead(path: string, limit: number): Promise<Uint8Array> {
-  const handle = await openFile(path, "r");
-  try {
-    const buffer = Buffer.alloc(limit);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    return buffer.subarray(0, bytesRead);
-  } finally {
-    await handle.close();
-  }
-}
-
 function fileUrl(path: string): string {
   return pathToFileURL(path).href.replace(/\(/g, "%28").replace(/\)/g, "%29");
 }
@@ -561,8 +558,8 @@ async function buildPreview(
 }
 
 export default function Search(props: LaunchProps) {
-  const preferences = getPreferenceValues<Preferences>();
-  const binaryPath = preferences.binaryPath?.trim() || DEFAULT_BINARY;
+  const preferences = getPreferenceValues<Preferences.Search>();
+  const binaryPath = preferences.binaryPath?.trim() ?? "";
   const defaultLimit = Number(preferences.resultLimit) || 50;
   const defaultScope = preferences.searchRoot?.trim() || "";
 
@@ -607,7 +604,7 @@ export default function Search(props: LaunchProps) {
   const lastSearchKey = useRef<string | undefined>(undefined);
   // Query words of the results on screen. Previews highlight these, not the
   // live query, so a keystroke rebuilds the preview once, with the new results.
-  const [resultTerms, setResultTerms] = useState<string[]>([]);
+  const [termsKey, setTermsKey] = useState("");
   const lastErrorKind = useRef<SearchError["kind"] | undefined>(undefined);
 
   // The configured default folder alone keeps the home screen; an explicit choice starts a search.
@@ -696,8 +693,12 @@ export default function Search(props: LaunchProps) {
         // FSearch was just installed: the search that failed as "missing" can run now.
         if (lastSetupError.current === "missing") setRetry((n) => n + 1);
         lastSetupError.current = undefined;
+        // Optional context: a failed probe must not discard the status above.
         const folders = value.fullDiskAccess
-          ? await findUnindexedProtectedFolders(binaryPath, controller.signal)
+          ? await findUnindexedProtectedFolders(
+              binaryPath,
+              controller.signal,
+            ).catch(() => [])
           : [];
         if (!controller.signal.aborted) setUnindexed(folders);
       } catch (cause) {
@@ -716,16 +717,14 @@ export default function Search(props: LaunchProps) {
   // Keep checking while FSearch is being installed or building its index, so
   // the home screen moves on by itself.
   useEffect(() => {
-    if (
-      setupError !== "missing" &&
-      setupError !== "indexing" &&
-      setupError !== "daemon"
-    )
-      return;
-    const timer = setTimeout(
-      () => setIndexGeneration((n) => n + 1),
-      setupError === "missing" ? 4000 : 2500,
-    );
+    if (!setupError) return;
+    const delay =
+      setupError === "indexing" || setupError === "daemon"
+        ? 2500
+        : setupError === "missing"
+          ? 4000
+          : 15000;
+    const timer = setTimeout(() => setIndexGeneration((n) => n + 1), delay);
     return () => clearTimeout(timer);
   }, [setupError, indexGeneration]);
 
@@ -746,6 +745,7 @@ export default function Search(props: LaunchProps) {
       setResult(undefined);
       setError(undefined);
       setLoading(false);
+      lastSearchKey.current = undefined;
       return () => controller.abort();
     }
     // Keep the previous error visible while retrying so the empty state does not flicker.
@@ -765,7 +765,7 @@ export default function Search(props: LaunchProps) {
         );
         if (!controller.signal.aborted) {
           setResult(response);
-          setResultTerms(highlightTerms(query));
+          setTermsKey(highlightTerms(query).join("\u0000"));
           setError(undefined);
           setAutoRetries(0);
           if (lastSearchKey.current !== searchKey) {
@@ -827,12 +827,25 @@ export default function Search(props: LaunchProps) {
     [result, sort],
   );
   const { list: sortedFiles, contentResults, effectiveSort } = files;
+  // Every row carries a detail; build the match lists once per result set
+  // rather than on each render of up to 500 rows.
+  const matchMarkdown = useMemo(
+    () =>
+      new Map(
+        (result?.files ?? [])
+          .filter((file) => file.matches)
+          .map((file) => [
+            file.path,
+            matchListMarkdown(file.path, file.matches ?? []),
+          ]),
+      ),
+    [result],
+  );
 
   const selectedFile =
     sortedFiles.find((file) => file.path === selectedPath) ?? sortedFiles[0];
   const previewPath = active && showDetails ? selectedFile?.path : undefined;
   const selectedMatches = selectedFile?.matches;
-  const termsKey = resultTerms.join("\u0000");
   const canLoadMore =
     active &&
     result !== undefined &&
@@ -853,7 +866,7 @@ export default function Search(props: LaunchProps) {
     // Only inspect the selected result, after keyboard navigation settles.
     const timer = setTimeout(async () => {
       try {
-        await mkdir(THUMBNAIL_CACHE, { recursive: true });
+        await thumbnailCacheReady;
         const preview = await buildPreview(
           previewPath,
           selectedMatches,
@@ -991,7 +1004,7 @@ export default function Search(props: LaunchProps) {
     />
   );
 
-  const installInTerminal = useCallback(async () => {
+  const installInTerminal = async () => {
     const command = installCommand(rust);
     try {
       await runInTerminal(command);
@@ -1010,7 +1023,15 @@ export default function Search(props: LaunchProps) {
         message: `The install command is on your clipboard. ${String(cause)}`,
       });
     }
-  }, [rust]);
+  };
+
+  const preferencesAction = (
+    <Action
+      title="Open Extension Preferences"
+      icon={Icon.Gear}
+      onAction={openExtensionPreferences}
+    />
+  );
 
   const installActions = (
     <>
@@ -1040,11 +1061,7 @@ export default function Search(props: LaunchProps) {
               {installActions}
               {fullDiskAccessAction}
               {rebuildAction}
-              <Action
-                title="Open Extension Preferences"
-                icon={Icon.Gear}
-                onAction={openExtensionPreferences}
-              />
+              {preferencesAction}
             </ActionPanel>
           }
         />
@@ -1145,11 +1162,7 @@ export default function Search(props: LaunchProps) {
       {guideAction}
       {fullDiskAccessMissing && fullDiskAccessAction}
       {!rebuilding && rebuildAction}
-      <Action
-        title="Open Extension Preferences"
-        icon={Icon.Gear}
-        onAction={openExtensionPreferences}
-      />
+      {preferencesAction}
     </ActionPanel.Section>
   );
 
@@ -1199,7 +1212,7 @@ export default function Search(props: LaunchProps) {
             icon: Icon.QuestionMarkCircle,
             tint: Color.Orange,
             title: "Invalid Query",
-            description: `${error.message}\n\nCheck the filter syntax in the guide. Valid types are doc, image, code, app, audio, video, and archive.`,
+            description: `${error.message}\n\nCheck the filter syntax in the guide. Valid types are doc, image, code, app, audio, video, archive, and font.`,
           };
         default:
           return {
@@ -1328,11 +1341,7 @@ export default function Search(props: LaunchProps) {
                   <ActionPanel>
                     {installActions}
                     {guideAction}
-                    <Action
-                      title="Open Extension Preferences"
-                      icon={Icon.Gear}
-                      onAction={openExtensionPreferences}
-                    />
+                    {preferencesAction}
                   </ActionPanel>
                 }
               />
@@ -1355,11 +1364,7 @@ export default function Search(props: LaunchProps) {
                 actions={
                   <ActionPanel>
                     {guideAction}
-                    <Action
-                      title="Open Extension Preferences"
-                      icon={Icon.Gear}
-                      onAction={openExtensionPreferences}
-                    />
+                    {preferencesAction}
                   </ActionPanel>
                 }
               />
@@ -1632,10 +1637,9 @@ export default function Search(props: LaunchProps) {
                   markdown={
                     filePreview?.path === file.path
                       ? filePreview.markdown
-                      : file.matches
-                        ? matchListMarkdown(file.path, file.matches)
-                        : // Reserve the preview height without a visible loading label.
-                          `![](preview-placeholder.png?raycast-height=${PREVIEW_MAX_HEIGHT})`
+                      : (matchMarkdown.get(file.path) ??
+                        // Reserve the preview height without a visible loading label.
+                        `![](preview-placeholder.png?raycast-height=${PREVIEW_MAX_HEIGHT})`)
                   }
                   metadata={(() => {
                     const preview =

@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { extname } from "node:path";
+import { PROTECTED_FOLDERS } from "./fsearch";
 
 /** Shortens paths inside the home folder to `~/…` for display. */
 export function displayPath(path: string): string {
@@ -40,7 +41,7 @@ export function describeKind(path: string, kind: string): string {
 /** True when the path is inside a folder that macOS gates behind Full Disk Access. */
 export function isProtectedPath(path: string): boolean {
   const home = homedir();
-  return ["Desktop", "Documents", "Downloads", "Library"].some((folder) => {
+  return [...PROTECTED_FOLDERS, "Library"].some((folder) => {
     const protectedRoot = `${home}/${folder}`;
     return path === protectedRoot || path.startsWith(protectedRoot + "/");
   });

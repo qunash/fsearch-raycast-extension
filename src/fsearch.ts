@@ -27,8 +27,6 @@ export interface SearchResult {
 export interface ContentOptions {
   /** Milliseconds to spend reading candidate files (daemon default 250). */
   budgetMs?: number;
-  /** Matches reported per file (daemon default 5). */
-  perFile?: number;
 }
 
 export interface IndexStatus {
@@ -79,8 +77,8 @@ export const BINARY_CANDIDATES = [
 ] as const;
 
 /** Expands a leading `~` and trims whitespace so preference typos do not break launching. */
-export function resolveBinary(binaryPath: string | undefined): string {
-  const trimmed = (binaryPath ?? "").trim() || DEFAULT_BINARY;
+export function resolveBinary(binaryPath: string): string {
+  const trimmed = binaryPath.trim();
   if (trimmed === "~") return homedir();
   return trimmed.startsWith("~/") ? join(homedir(), trimmed.slice(2)) : trimmed;
 }
@@ -95,16 +93,32 @@ async function isExecutable(path: string): Promise<boolean> {
 }
 
 /**
- * The executable to run. An explicit preference is used as given; an empty
- * one (or the historical default) looks through the usual install locations,
- * so `cargo install` and `fsearch install` both work without configuration.
+ * The executable to run, checked to exist. An explicit preference is used as
+ * given; an empty one (or the historical default) looks through the usual
+ * install locations, so `cargo install` and `fsearch install` both work
+ * without configuration.
  */
 export async function findBinary(
   binaryPath: string | undefined,
   executable: (path: string) => Promise<boolean> = isExecutable,
 ): Promise<string> {
   const trimmed = (binaryPath ?? "").trim();
-  if (trimmed && trimmed !== DEFAULT_BINARY) return resolveBinary(trimmed);
+  if (trimmed && trimmed !== DEFAULT_BINARY) {
+    const binary = resolveBinary(trimmed);
+    if (!isAbsolute(binary)) {
+      throw new SearchError(
+        "missing",
+        "Set an absolute FSearch executable path in extension preferences.",
+      );
+    }
+    if (!(await executable(binary))) {
+      throw new SearchError(
+        "missing",
+        `Could not run FSearch at ${binary}. Check that it is installed and executable.`,
+      );
+    }
+    return binary;
+  }
   for (const candidate of BINARY_CANDIDATES) {
     const path = resolveBinary(candidate);
     if (await executable(path)) return path;
@@ -257,8 +271,8 @@ export function parseStatus(stdout: string): IndexStatus {
     throw new SearchError("protocol", "FSearch did not report its status.");
   }
   const number = (key: string) =>
-    key in data && typeof (data as Record<string, unknown>)[key] === "number"
-      ? ((data as Record<string, number>)[key] ?? 0)
+    typeof (data as Record<string, unknown>)[key] === "number"
+      ? (data as Record<string, number>)[key]
       : 0;
   return {
     fullDiskAccess:
@@ -267,24 +281,6 @@ export function parseStatus(stdout: string): IndexStatus {
     contentDocs: number("content_docs"),
     contentPending: number("content_pending"),
   };
-}
-
-async function ensureExecutable(binary: string): Promise<void> {
-  if (!isAbsolute(binary)) {
-    throw new SearchError(
-      "missing",
-      "Set an absolute FSearch executable path in extension preferences.",
-    );
-  }
-  try {
-    await access(binary, constants.X_OK);
-  } catch (cause) {
-    throw new SearchError(
-      "missing",
-      `Could not run FSearch at ${binary}. Check that it is installed and executable.`,
-      { cause },
-    );
-  }
 }
 
 function run(
@@ -461,6 +457,10 @@ let connecting: Promise<DaemonClient | null> | null = null;
 /** Points the client at another socket, or `null` to always go through `fsearch stdio`. */
 export function setSocketPath(path: string | null): void {
   socketPath = path;
+  resetClient();
+}
+
+function resetClient(): void {
   client?.close();
   client = null;
   connecting = null;
@@ -494,7 +494,6 @@ async function exchange(
   payload: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  await ensureExecutable(binary);
   const daemon = await connectDaemon();
   if (daemon) return daemon.request(payload, signal);
   return run(binary, ["stdio"], JSON.stringify(payload) + "\n", signal);
@@ -520,9 +519,6 @@ export async function searchFiles(
     ...(root ? { in: root } : {}),
     ...(isContentSearch && content.budgetMs
       ? { budget_ms: content.budgetMs }
-      : {}),
-    ...(isContentSearch && content.perFile
-      ? { per_file: content.perFile }
       : {}),
   };
   return parseResponse(await exchange(binary, request, signal));
@@ -596,10 +592,8 @@ function listProcesses(): Promise<{ pid: number; command: string }[]> {
  */
 export async function rebuildIndex(binaryPath: string): Promise<void> {
   const binary = await findBinary(binaryPath);
-  await ensureExecutable(binary);
-  client?.close();
-  client = null;
-  // Only the daemon we manage: an exact "<fsearch binary> serve" command line.
+  resetClient();
+  // Only fsearch daemons: ours by exact path, or any other "fsearch serve".
   const daemons = (await listProcesses()).filter(
     (process) =>
       process.command === `${binary} serve` ||

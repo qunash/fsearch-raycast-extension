@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import {
   codeBlock,
   decodeTextSample,
   describeKind,
   displayPath,
+  fitPreviewSize,
   formatDuration,
   formatSize,
+  imageDimensions,
   isProtectedPath,
   languageFor,
+  normalizeQuery,
 } from "../src/format.ts";
+import { formatClock } from "../src/preview.ts";
 
 test("formats sizes and durations for humans", () => {
   assert.equal(formatSize(0), "0 B");
@@ -96,11 +101,7 @@ test("maps extensions to fence languages", () => {
 });
 
 test("reads image dimensions from headers", async () => {
-  const { readFile } = await import("node:fs/promises");
-  const { imageDimensions, fitPreviewSize } = await import("../src/format.ts");
-  const png = await readFile(
-    new URL("../assets/fsearch-icon.png", import.meta.url),
-  );
+  const png = await readFile(new URL("../assets/icon.png", import.meta.url));
   assert.deepEqual(imageDimensions(png), { width: 512, height: 512 });
   const placeholder = await readFile(
     new URL("../assets/preview-placeholder.png", import.meta.url),
@@ -149,8 +150,7 @@ test("reads image dimensions from headers", async () => {
   assert.deepEqual(fitPreviewSize(undefined), { width: 280, height: 150 });
 });
 
-test("normalizeQuery turns wildcards into fsearch filters", async () => {
-  const { normalizeQuery } = await import("../src/format.ts");
+test("normalizeQuery turns wildcards into fsearch filters", () => {
   assert.equal(normalizeQuery("*.docx"), "ext:docx");
   assert.equal(normalizeQuery("*.PDF"), "ext:pdf");
   assert.equal(normalizeQuery("report*.pdf"), "report ext:pdf");
@@ -160,8 +160,7 @@ test("normalizeQuery turns wildcards into fsearch filters", async () => {
   assert.equal(normalizeQuery("*"), "");
 });
 
-test("formatClock renders durations", async () => {
-  const { formatClock } = await import("../src/preview.ts");
+test("formatClock renders durations", () => {
   assert.equal(formatClock(29.44), "0:29");
   assert.equal(formatClock(3725), "1:02:05");
 });

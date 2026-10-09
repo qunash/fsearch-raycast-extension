@@ -218,8 +218,6 @@ test("resolves the executable path from preferences", () => {
     join(homedir(), ".local/bin/fsearch"),
   );
   assert.equal(resolveBinary("  /opt/fsearch  "), "/opt/fsearch");
-  assert.equal(resolveBinary(""), join(homedir(), ".local/bin/fsearch"));
-  assert.equal(resolveBinary(undefined), join(homedir(), ".local/bin/fsearch"));
 });
 
 test("parses daemon status including Full Disk Access", async () => {
@@ -306,10 +304,14 @@ test("finds the executable in the usual install locations when no path is set", 
     await findBinary("", async () => true),
     join(homedir(), ".local/bin/fsearch"),
   );
-  // An explicit path is used as given, even when it does not exist yet.
+  // An explicit path is used as given, but must exist.
   assert.equal(
-    await findBinary("/opt/fsearch", async () => false),
+    await findBinary("/opt/fsearch", async () => true),
     "/opt/fsearch",
+  );
+  await assert.rejects(
+    findBinary("/opt/fsearch", async () => false),
+    /Could not run FSearch at \/opt\/fsearch/,
   );
   await assert.rejects(
     findBinary("", async () => false),

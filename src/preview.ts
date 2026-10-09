@@ -1,15 +1,26 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  access,
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { access, mkdir, open, rename, rm, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { ImageSize, imageDimensions } from "./format";
+
+/** Enough of a PNG to read its IHDR dimensions. */
+const PNG_HEADER_BYTES = 32;
+
+/** Reads at most `limit` bytes from the start of a file. */
+export async function readHead(
+  path: string,
+  limit: number,
+): Promise<Uint8Array> {
+  const handle = await open(path, "r");
+  try {
+    const buffer = Buffer.alloc(limit);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
 
 /** Images Raycast renders directly from a file URL. */
 export const NATIVE_IMAGE_EXTENSIONS = [
@@ -182,7 +193,7 @@ export async function quickLookThumbnail(
   // them does not wait for the timeout again.
   const failed = join(cacheDir, `${key}.none`);
   try {
-    const header = await readFile(cached);
+    const header = await readHead(cached, PNG_HEADER_BYTES);
     return { path: cached, size: imageDimensions(header) };
   } catch {
     // Not cached yet.
@@ -202,9 +213,9 @@ export async function quickLookThumbnail(
       signal,
     );
     const produced = join(workDir, `${basename(path)}.png`);
-    let header: Buffer;
+    let header: Uint8Array;
     try {
-      header = await readFile(produced);
+      header = await readHead(produced, PNG_HEADER_BYTES);
     } catch {
       await writeFile(failed, "");
       return undefined;
@@ -260,7 +271,7 @@ export async function fileIcon(
   const key = createHash("sha1").update(identity).digest("hex");
   const cached = join(cacheDir, `icon-${key}.png`);
   try {
-    const header = await readFile(cached);
+    const header = await readHead(cached, PNG_HEADER_BYTES);
     return { path: cached, size: imageDimensions(header) };
   } catch {
     // Not cached yet.
@@ -281,7 +292,7 @@ export async function fileIcon(
       signal,
     );
     if (!output.trim().endsWith("ok")) return undefined;
-    const header = await readFile(temporary);
+    const header = await readHead(temporary, PNG_HEADER_BYTES);
     await rename(temporary, cached);
     return { path: cached, size: imageDimensions(header) };
   } catch {
