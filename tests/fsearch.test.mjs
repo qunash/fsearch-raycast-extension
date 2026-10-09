@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  findBinary,
   getStatus,
   parseResponse,
   parseStatus,
@@ -12,6 +13,7 @@ import {
   searchFiles,
   setSocketPath,
 } from "../src/fsearch.ts";
+import { appleScriptString, installCommand } from "../src/install.ts";
 
 // Never touch a real daemon: every request goes through the mock executables.
 setSocketPath(null);
@@ -286,4 +288,51 @@ test("preserves modification times for recent-file sorting and rejects invalid d
       ),
     /invalid modification date/,
   );
+});
+
+test("finds the executable in the usual install locations when no path is set", async () => {
+  const cargo = join(homedir(), ".cargo/bin/fsearch");
+  const only = (path) => async (candidate) => candidate === path;
+  assert.equal(await findBinary("", only(cargo)), cargo);
+  assert.equal(await findBinary(undefined, only(cargo)), cargo);
+  // The historical default preference value means "look around" too.
+  assert.equal(await findBinary("~/.local/bin/fsearch", only(cargo)), cargo);
+  assert.equal(
+    await findBinary("", only("/opt/homebrew/bin/fsearch")),
+    "/opt/homebrew/bin/fsearch",
+  );
+  // ~/.local/bin wins when both exist, matching the old behaviour.
+  assert.equal(
+    await findBinary("", async () => true),
+    join(homedir(), ".local/bin/fsearch"),
+  );
+  // An explicit path is used as given, even when it does not exist yet.
+  assert.equal(
+    await findBinary("/opt/fsearch", async () => false),
+    "/opt/fsearch",
+  );
+  await assert.rejects(
+    findBinary("", async () => false),
+    (error) =>
+      error instanceof SearchError &&
+      error.kind === "missing" &&
+      /not installed/.test(error.message) &&
+      /\.cargo\/bin/.test(error.message),
+  );
+});
+
+test("install command adds Rust only when it is missing, and quotes for AppleScript", () => {
+  assert.equal(
+    installCommand(true),
+    "cargo install --git https://github.com/noahdunnagan/fsearch",
+  );
+  assert.match(
+    installCommand(false),
+    /^curl .*sh\.rustup\.rs \| sh -s -- -y && \. "\$HOME\/\.cargo\/env" && cargo install --git/,
+  );
+  assert.equal(
+    appleScriptString(installCommand(false)),
+    `"${installCommand(false).replace(/"/g, '\\"')}"`,
+  );
+  assert.equal(appleScriptString('a\\b "c"'), '"a\\\\b \\"c\\""');
 });

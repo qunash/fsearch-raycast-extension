@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { createConnection, type Socket } from "node:net";
 import { access, constants, readdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 export interface SearchFile {
@@ -70,11 +70,49 @@ let socketPath: string | null = join(INDEX_DIR, "fsearch.sock");
 const REQUEST_TIMEOUT_MS = 20000;
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 
+/** Where `cargo install`, `fsearch install`, and Homebrew put the executable. */
+export const BINARY_CANDIDATES = [
+  "~/.local/bin/fsearch",
+  "~/.cargo/bin/fsearch",
+  "/opt/homebrew/bin/fsearch",
+  "/usr/local/bin/fsearch",
+] as const;
+
 /** Expands a leading `~` and trims whitespace so preference typos do not break launching. */
 export function resolveBinary(binaryPath: string | undefined): string {
   const trimmed = (binaryPath ?? "").trim() || DEFAULT_BINARY;
   if (trimmed === "~") return homedir();
   return trimmed.startsWith("~/") ? join(homedir(), trimmed.slice(2)) : trimmed;
+}
+
+async function isExecutable(path: string): Promise<boolean> {
+  try {
+    await access(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The executable to run. An explicit preference is used as given; an empty
+ * one (or the historical default) looks through the usual install locations,
+ * so `cargo install` and `fsearch install` both work without configuration.
+ */
+export async function findBinary(
+  binaryPath: string | undefined,
+  executable: (path: string) => Promise<boolean> = isExecutable,
+): Promise<string> {
+  const trimmed = (binaryPath ?? "").trim();
+  if (trimmed && trimmed !== DEFAULT_BINARY) return resolveBinary(trimmed);
+  for (const candidate of BINARY_CANDIDATES) {
+    const path = resolveBinary(candidate);
+    if (await executable(path)) return path;
+  }
+  throw new SearchError(
+    "missing",
+    `FSearch is not installed. Looked in ${BINARY_CANDIDATES.map((candidate) => dirname(candidate)).join(", ")}.`,
+  );
 }
 
 function classifyDaemonError(message: string): SearchErrorKind {
@@ -472,7 +510,7 @@ export async function searchFiles(
   signal: AbortSignal,
   content: ContentOptions = {},
 ): Promise<SearchResult> {
-  const binary = resolveBinary(binaryPath);
+  const binary = await findBinary(binaryPath);
   const isContentSearch = CONTENT_FILTERS.some((filter) =>
     query.includes(filter),
   );
@@ -495,7 +533,7 @@ export async function getStatus(
   binaryPath: string,
   signal: AbortSignal,
 ): Promise<IndexStatus> {
-  const binary = resolveBinary(binaryPath);
+  const binary = await findBinary(binaryPath);
   return parseStatus(await exchange(binary, { op: "status" }, signal));
 }
 
@@ -509,7 +547,7 @@ export async function findUnindexedProtectedFolders(
   binaryPath: string,
   signal: AbortSignal,
 ): Promise<string[]> {
-  const binary = resolveBinary(binaryPath);
+  const binary = await findBinary(binaryPath);
   const unindexed: string[] = [];
   for (const name of PROTECTED_FOLDERS) {
     const folder = join(homedir(), name);
@@ -557,7 +595,7 @@ function listProcesses(): Promise<{ pid: number; command: string }[]> {
  * rebuilds in about 20 seconds; the content index follows a few seconds later.
  */
 export async function rebuildIndex(binaryPath: string): Promise<void> {
-  const binary = resolveBinary(binaryPath);
+  const binary = await findBinary(binaryPath);
   await ensureExecutable(binary);
   client?.close();
   client = null;

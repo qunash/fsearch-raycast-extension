@@ -2,6 +2,7 @@ import {
   Action,
   ActionPanel,
   Alert,
+  Clipboard,
   Color,
   confirmAlert,
   Detail,
@@ -56,10 +57,17 @@ import {
   IndexStatus,
   rebuildIndex,
   SearchError,
+  SearchErrorKind,
   searchFiles,
   SearchFile,
   SearchResult,
 } from "./fsearch";
+import {
+  FSEARCH_REPO,
+  hasRust,
+  installCommand,
+  runInTerminal,
+} from "./install";
 
 const MAX_LIMIT = 500;
 /** Content-search read budget: the daemon's 250 ms default grows with each Show More. */
@@ -89,8 +97,6 @@ const MATCH_PREVIEW_BYTES = 4 * 1024 * 1024;
 const SAVED_SEARCHES_KEY = "saved-searches";
 const FULL_DISK_ACCESS_SETTINGS =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
-const INSTALL_COMMAND =
-  "git clone https://github.com/noahdunnagan/fsearch.git && cd fsearch && cargo build --release && ./target/release/fsearch install";
 
 const fileTypes = [
   { title: "Everything", value: "", icon: Icon.MagnifyingGlass },
@@ -175,16 +181,15 @@ FSearch brings fuzzy, whole-disk file search to Raycast. Type a filename, narrow
 
 ## Install once
 
-Requires macOS and Rust / Cargo. Run in Terminal:
+FSearch is a small Rust program. Choose **Install FSearch in Terminal** from the action panel and it builds itself in a Terminal window, installing Rust first if you do not have it. Or run the command yourself:
 
 \`\`\`sh
-git clone https://github.com/noahdunnagan/fsearch.git
-cd fsearch
-cargo build --release
-./target/release/fsearch install
+cargo install --git https://github.com/noahdunnagan/fsearch
 \`\`\`
 
-The extension uses \`~/.local/bin/fsearch\`. Set a different executable or a default search folder in extension preferences. The daemon starts automatically on your first search; the initial index can take around 20 seconds. The command retries automatically while the index is being built.
+Building needs Apple's Command Line Tools; macOS offers to install them when they are missing. The extension finds fsearch in \`~/.cargo/bin\`, \`~/.local/bin\`, and Homebrew's bin folders, so no preference needs changing. Set a different executable or a default search folder in extension preferences if you like.
+
+The daemon starts on your first search. Its first crawl of the disk takes around 20 seconds, and the home screen updates when it is done.
 
 ## Search from Raycast’s main search
 
@@ -604,6 +609,10 @@ export default function Search(props: LaunchProps) {
   const [status, setStatus] = useState<IndexStatus>();
   const [unindexed, setUnindexed] = useState<string[]>([]);
   const [indexGeneration, setIndexGeneration] = useState(0);
+  // Why the daemon cannot be reached yet: drives the setup rows on the home screen.
+  const [setupError, setSetupError] = useState<SearchErrorKind>();
+  const lastSetupError = useRef<SearchErrorKind | undefined>(undefined);
+  const [rust, setRust] = useState(true);
   const [rebuilding, setRebuilding] = useState(false);
   // Raycast keeps the old row index when items change and reports it back after
   // our selection update; while this is set, that stale report is bounced to the top.
@@ -701,13 +710,19 @@ export default function Search(props: LaunchProps) {
         const value = await getStatus(binaryPath, controller.signal);
         if (controller.signal.aborted) return;
         setStatus(value);
+        setSetupError(undefined);
+        // FSearch was just installed: the search that failed as "missing" can run now.
+        if (lastSetupError.current === "missing") setRetry((n) => n + 1);
+        lastSetupError.current = undefined;
         const folders = value.fullDiskAccess
           ? await findUnindexedProtectedFolders(binaryPath, controller.signal)
           : [];
         if (!controller.signal.aborted) setUnindexed(folders);
-      } catch {
-        // Missing executables are reported by the search itself; status is optional context.
+      } catch (cause) {
         if (!controller.signal.aborted) {
+          const kind = toSearchError(cause).kind;
+          lastSetupError.current = kind;
+          setSetupError(kind);
           setStatus(undefined);
           setUnindexed([]);
         }
@@ -715,6 +730,33 @@ export default function Search(props: LaunchProps) {
     })();
     return () => controller.abort();
   }, [binaryPath, retry, indexGeneration]);
+
+  // Keep checking while FSearch is being installed or building its index, so
+  // the home screen moves on by itself.
+  useEffect(() => {
+    if (
+      setupError !== "missing" &&
+      setupError !== "indexing" &&
+      setupError !== "daemon"
+    )
+      return;
+    const timer = setTimeout(
+      () => setIndexGeneration((n) => n + 1),
+      setupError === "missing" ? 4000 : 2500,
+    );
+    return () => clearTimeout(timer);
+  }, [setupError, indexGeneration]);
+
+  useEffect(() => {
+    if (setupError !== "missing") return;
+    let disposed = false;
+    hasRust().then((value) => {
+      if (!disposed) setRust(value);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [setupError]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -967,6 +1009,42 @@ export default function Search(props: LaunchProps) {
     />
   );
 
+  const installInTerminal = useCallback(async () => {
+    const command = installCommand(rust);
+    try {
+      await runInTerminal(command);
+      await showToast({
+        style: Toast.Style.Success,
+        title: "Installing FSearch in Terminal",
+        message: rust
+          ? "About a minute. This screen updates when it finishes."
+          : "Rust first, then FSearch. This screen updates when it finishes.",
+      });
+    } catch (cause) {
+      await Clipboard.copy(command);
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Could Not Open Terminal",
+        message: `The install command is on your clipboard. ${String(cause)}`,
+      });
+    }
+  }, [rust]);
+
+  const installActions = (
+    <>
+      <Action
+        title="Install FSearch in Terminal"
+        icon={Icon.Terminal}
+        onAction={installInTerminal}
+      />
+      <Action.CopyToClipboard
+        title="Copy Install Command"
+        content={installCommand(rust)}
+      />
+      <Action.OpenInBrowser title="Open FSearch on GitHub" url={FSEARCH_REPO} />
+    </>
+  );
+
   const guideAction = (
     <Action.Push
       title="Search Tips & Setup"
@@ -977,14 +1055,7 @@ export default function Search(props: LaunchProps) {
           markdown={guide}
           actions={
             <ActionPanel>
-              <Action.CopyToClipboard
-                title="Copy Install Command"
-                content={INSTALL_COMMAND}
-              />
-              <Action.OpenInBrowser
-                title="Open FSearch on GitHub"
-                url="https://github.com/noahdunnagan/fsearch"
-              />
+              {installActions}
               {fullDiskAccessAction}
               {rebuildAction}
               <Action
@@ -1108,7 +1179,7 @@ export default function Search(props: LaunchProps) {
             icon: Icon.Download,
             tint: Color.Orange,
             title: "FSearch Not Installed",
-            description: `${error.message}\n\nOpen the guide for the one-time install steps, or point the extension at an existing executable in preferences.`,
+            description: `${error.message}\n\nInstall it with one Terminal command${rust ? "" : " (Rust is installed first)"}, or point the extension at an existing executable in preferences.`,
           };
         case "indexing":
           return {
@@ -1261,6 +1332,57 @@ export default function Search(props: LaunchProps) {
     >
       {!active && (
         <>
+          {setupError === "missing" && (
+            <List.Section title="Get Started">
+              <List.Item
+                title="Install FSearch"
+                subtitle={
+                  rust
+                    ? "One Terminal command, about a minute"
+                    : "Installs Rust, then FSearch, in Terminal"
+                }
+                icon={{ source: Icon.Download, tintColor: Color.Orange }}
+                actions={
+                  <ActionPanel>
+                    {installActions}
+                    {guideAction}
+                    <Action
+                      title="Open Extension Preferences"
+                      icon={Icon.Gear}
+                      onAction={openExtensionPreferences}
+                    />
+                  </ActionPanel>
+                }
+              />
+            </List.Section>
+          )}
+          {(setupError === "indexing" || setupError === "daemon") && (
+            <List.Section title="Get Started">
+              <List.Item
+                title={
+                  setupError === "indexing"
+                    ? "Building Index…"
+                    : "Starting FSearch…"
+                }
+                subtitle={
+                  setupError === "indexing"
+                    ? "The first crawl of your disk takes about 20 seconds"
+                    : "Waiting for the search daemon"
+                }
+                icon={{ source: Icon.Hourglass, tintColor: Color.Blue }}
+                actions={
+                  <ActionPanel>
+                    {guideAction}
+                    <Action
+                      title="Open Extension Preferences"
+                      icon={Icon.Gear}
+                      onAction={openExtensionPreferences}
+                    />
+                  </ActionPanel>
+                }
+              />
+            </List.Section>
+          )}
           {saved.length > 0 && (
             <List.Section title="Saved Searches">
               {saved.map((item) => (
@@ -1451,13 +1573,8 @@ export default function Search(props: LaunchProps) {
         description={emptyState.description || undefined}
         actions={
           <ActionPanel>
+            {error?.kind === "missing" && installActions}
             {error?.kind === "missing" && guideAction}
-            {error?.kind === "missing" && (
-              <Action.CopyToClipboard
-                title="Copy Install Command"
-                content={INSTALL_COMMAND}
-              />
-            )}
             {!error && fullDiskAccessMissing && fullDiskAccessAction}
             {!error && needsRebuild && rebuildAction}
             {filter && (

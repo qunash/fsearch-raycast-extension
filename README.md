@@ -18,25 +18,24 @@ Fast, local file search in Raycast, powered by [noahdunnagan/fsearch](https://gi
 
 ## Install
 
-Requires macOS, Raycast, Bun 1.1.32+ and Node.js for Raycast’s CLI, and Rust/Cargo to build fsearch.
-
-First install the search engine using its upstream instructions:
+Requires macOS and Raycast. fsearch is a small Rust program with no prebuilt binaries yet, so it is built from source once:
 
 ```sh
-git clone https://github.com/noahdunnagan/fsearch.git
-cd fsearch
-cargo build --release
-./target/release/fsearch install
+cargo install --git https://github.com/noahdunnagan/fsearch
 ```
 
-Then, from this extension directory:
+You do not have to do this by hand. When fsearch is missing, the command’s home screen shows an **Install FSearch** row whose **Install FSearch in Terminal** action runs that command in a Terminal window, installing Rust with rustup first if there is no toolchain. Building needs Apple’s Command Line Tools; macOS offers to install them when they are missing. The home screen re-checks every few seconds and switches to the index build, then to search, as the install finishes.
+
+The extension finds fsearch in `~/.local/bin`, `~/.cargo/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`, so `cargo install`, `fsearch install`, and a Homebrew install all work without touching preferences. Point the **FSearch Executable** preference at a binary only if you keep it somewhere else.
+
+To run the extension from source rather than the Store, with Bun 1.1.32+ and Node.js installed for Raycast’s CLI:
 
 ```sh
 bun install
 bun run dev
 ```
 
-Open **Search Files** in Raycast. The default executable is `~/.local/bin/fsearch`; change it in extension preferences if necessary. The first query starts fsearch’s daemon. Initial indexing can take around 20 seconds; the command retries automatically while the first index is being built.
+Open **Search Files** in Raycast. The first query starts fsearch’s daemon. Initial indexing takes around 20 seconds; the home screen shows the build and the command retries automatically while the first index is being built.
 
 macOS hides Desktop, Documents, Downloads, and parts of Library until fsearch has Full Disk Access. Grant it to Raycast (the daemon Raycast starts inherits the permission) or, following [fsearch’s guidance](https://github.com/noahdunnagan/fsearch#full-disk-access), to a login daemon installed with `~/.local/bin/fsearch install --login`. Until then the extension marks those places as skipped and offers a shortcut to the Privacy & Security settings.
 
@@ -52,7 +51,7 @@ Fallback registration is a Raycast user setting; there is no public extension AP
 
 | Preference         | Effect                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------- |
-| FSearch Executable | Path to the fsearch binary. `~` is expanded.                                                                  |
+| FSearch Executable | Optional path to the fsearch binary (`~` is expanded). Empty looks in the usual install locations.            |
 | Search Folder      | Default folder for every search. The home screen still appears; choose another folder with ⌘ ⇧ F at any time. |
 | Maximum Results    | Results per request before Show More.                                                                         |
 | Results            | Whether the preview pane is open by default. Toggle it with ⌘ D.                                              |

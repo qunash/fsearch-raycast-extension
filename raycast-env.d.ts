@@ -8,8 +8,8 @@
 /* eslint-disable @typescript-eslint/ban-types */
 
 type ExtensionPreferences = {
-  /** FSearch Executable - Path to the fsearch binary. Install fsearch before searching. */
-  "binaryPath": string,
+  /** FSearch Executable - Path to the fsearch executable. Leave it empty to look in ~/.local/bin, ~/.cargo/bin, and Homebrew's bin folders. */
+  "binaryPath"?: string,
   /** Search Folder - Optional folder to search within. Leave empty to search the whole index. */
   "searchRoot"?: string,
   /** Maximum Results - Maximum files returned per search. */

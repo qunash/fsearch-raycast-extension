@@ -34,10 +34,10 @@
     {
       "name": "binaryPath",
       "title": "FSearch Executable",
-      "description": "Path to the fsearch binary. Install fsearch before searching.",
+      "description": "Path to the fsearch executable. Leave it empty to look in ~/.local/bin, ~/.cargo/bin, and Homebrew's bin folders.",
       "type": "textfield",
       "required": false,
-      "default": "~/.local/bin/fsearch"
+      "placeholder": "Found automatically"
     },
     {
       "name": "searchRoot",
@@ -72,7 +72,7 @@
       "name": "showDetails",
       "title": "Results",
       "label": "Show the preview pane by default",
-      "description": "Open results in a split view with a file preview and metadata. Toggle it any time with ⌘ D.",
+      "description": "Open results in a split view with a file preview and metadata. Toggle it any time with \u2318 D.",
       "type": "checkbox",
       "required": false,
       "default": true
