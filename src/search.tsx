@@ -500,6 +500,10 @@ export default function Search(
     preferences.showDetails ?? true,
   );
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  // Passed to selectedItemId only right after new results, to jump to the top.
+  // Driving it during arrow-key navigation makes Raycast re-scroll on every
+  // move and pushes rows under the search field, so it is cleared otherwise.
+  const [forcedSelection, setForcedSelection] = useState<string | null>(null);
   const [filePreview, setFilePreview] = useState<FilePreview>();
   const [previewLoading, setPreviewLoading] = useState(false);
   const [saved, setSaved] = useState<SavedSearch[]>([]);
@@ -510,7 +514,11 @@ export default function Search(
   const [rebuilding, setRebuilding] = useState(false);
   // Raycast keeps the old row index when items change and reports it back after
   // our selection update; while this is set, that stale report is bounced to the top.
-  const pendingSelection = useRef<{ path: string; until: number } | null>(null);
+  const pendingSelection = useRef<{
+    path: string;
+    until: number;
+    bounced: boolean;
+  } | null>(null);
   const sortRef = useRef("relevance");
   const lastSearchKey = useRef<string | undefined>(undefined);
   const lastErrorKind = useRef<SearchError["kind"] | undefined>(undefined);
@@ -643,8 +651,9 @@ export default function Search(
             const first =
               sortFiles(response.files, sortRef.current).list[0]?.path ?? null;
             setSelectedPath(first);
+            setForcedSelection(first);
             pendingSelection.current = first
-              ? { path: first, until: Date.now() + 800 }
+              ? { path: first, until: Date.now() + 800, bounced: false }
               : null;
           }
           // The index just finished building: re-check status and protected folders.
@@ -756,6 +765,7 @@ export default function Search(
       sort: "relevance",
     });
     setSelectedPath(null);
+    setForcedSelection(null);
   };
 
   const toggleSaved = async () => {
@@ -1093,17 +1103,26 @@ export default function Search(
       filtering={false}
       isShowingDetail={active && showDetails && sortedFiles.length > 0}
       navigationTitle={scope ? `Search in ${displayPath(scope)}` : "FSearch"}
-      selectedItemId={active ? (selectedPath ?? undefined) : undefined}
+      selectedItemId={active ? (forcedSelection ?? undefined) : undefined}
       onSelectionChange={(id) => {
         const pending = pendingSelection.current;
-        if (pending && id !== pending.path && Date.now() < pending.until) {
-          // Raycast restored the previous row index; acknowledge it, then move to the top.
+        if (
+          pending &&
+          !pending.bounced &&
+          id !== pending.path &&
+          Date.now() < pending.until
+        ) {
+          // Raycast restored the previous row index once; acknowledge it, then
+          // move to the top. Later changes are the user's own navigation.
+          pending.bounced = true;
           setSelectedPath(id);
-          setTimeout(() => setSelectedPath(pending.path), 0);
+          setForcedSelection(id);
+          setTimeout(() => setForcedSelection(pending.path), 0);
           return;
         }
         pendingSelection.current = null;
         setSelectedPath(id);
+        setForcedSelection(null);
       }}
       searchText={query}
       onSearchTextChange={(text) => {
@@ -1517,6 +1536,7 @@ export default function Search(
                         filter: "",
                       });
                       setSelectedPath(null);
+                      setForcedSelection(null);
                     }}
                   />
                   <Action
