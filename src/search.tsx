@@ -298,6 +298,27 @@ function quickLookHint(path: string, kind: string): string {
 
 type Match = { line: number; text: string };
 
+/** Query words worth looking for inside a file: no filters, no one-letter noise. */
+function highlightTerms(query: string): string[] {
+  return normalizeQuery(query)
+    .split(" ")
+    .filter((word) => word.length >= 2 && !word.includes(":"))
+    .map((word) => word.toLowerCase());
+}
+
+/** Lines of `text` containing any term, case-insensitively, as fsearch-style matches. */
+function findTermLines(text: string, terms: string[]): Match[] {
+  if (terms.length === 0) return [];
+  const matches: Match[] = [];
+  text.split("\n").forEach((line, index) => {
+    const lower = line.toLowerCase();
+    if (terms.some((term) => lower.includes(term))) {
+      matches.push({ line: index + 1, text: line });
+    }
+  });
+  return matches;
+}
+
 /** The fsearch match list as a fallback when the file itself cannot be read. */
 function matchListMarkdown(path: string, matches: Match[]): string {
   return matches
@@ -318,9 +339,13 @@ async function matchContextMarkdown(
   path: string,
   size: number,
   matches: Match[],
+  decoded?: string,
 ): Promise<string | undefined> {
-  const sample = await readHead(path, MATCH_PREVIEW_BYTES);
-  const text = decodeTextSample(sample, size > sample.length);
+  let text = decoded;
+  if (text === undefined) {
+    const sample = await readHead(path, MATCH_PREVIEW_BYTES);
+    text = decodeTextSample(sample, size > sample.length);
+  }
   if (text === undefined) return undefined;
   const lines = text.split("\n");
   const matched = new Set(matches.map((match) => match.line));
@@ -376,6 +401,7 @@ function previewErrorMarkdown(path: string, cause: unknown): string {
 async function buildPreview(
   path: string,
   matches: Match[] | undefined,
+  terms: string[],
   signal: AbortSignal,
 ): Promise<FilePreview> {
   const info = await stat(path);
@@ -445,9 +471,14 @@ async function buildPreview(
   if (RICH_TEXT_EXTENSIONS.includes(extension)) {
     const content = await richTextContent(path, signal);
     if (content) {
+      const found = findTermLines(content.text, terms);
+      const markdown =
+        found.length > 0
+          ? await matchContextMarkdown(path, info.size, found, content.text)
+          : undefined;
       return {
         ...base,
-        markdown: codeBlock(content.text),
+        markdown: markdown ?? codeBlock(content.text),
         details: await details,
       };
     }
@@ -496,6 +527,12 @@ async function buildPreview(
   if (text === undefined) {
     // Unknown binary formats and non-UTF-8 text use Quick Look instead.
     return { ...base, markdown: quickLookHint(path, "file") };
+  }
+  // Filename searches: open the preview where the query words first appear.
+  const found = findTermLines(text, terms);
+  if (found.length > 0) {
+    const markdown = await matchContextMarkdown(path, info.size, found, text);
+    if (markdown) return { ...base, markdown };
   }
   return { ...base, markdown: codeBlock(text, languageFor(path)) };
 }
@@ -732,6 +769,7 @@ export default function Search(
     sortedFiles.find((file) => file.path === selectedPath) ?? sortedFiles[0];
   const previewPath = active && showDetails ? selectedFile?.path : undefined;
   const selectedMatches = selectedFile?.matches;
+  const termsKey = highlightTerms(query).join("\u0000");
   const canLoadMore =
     active &&
     result !== undefined &&
@@ -756,6 +794,7 @@ export default function Search(
         const preview = await buildPreview(
           previewPath,
           selectedMatches,
+          termsKey ? termsKey.split("\u0000") : [],
           controller.signal,
         );
         if (!disposed) setFilePreview(preview);
@@ -775,7 +814,7 @@ export default function Search(
       controller.abort();
       clearTimeout(timer);
     };
-  }, [previewPath, selectedMatches, retry]);
+  }, [previewPath, selectedMatches, termsKey, retry]);
 
   const loadMore = () => {
     setLimit((value) => Math.min(value + LOAD_MORE_STEP, MAX_LIMIT));
