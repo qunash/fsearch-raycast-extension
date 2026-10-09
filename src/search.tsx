@@ -180,7 +180,7 @@ The extension uses \`~/.local/bin/fsearch\`. Set a different executable or a def
 
 Add **Search Files — FSearch** in Raycast’s **Manage Fallback Commands** (or Settings → Launcher → Fallback Commands). Then type in Raycast’s main search and choose FSearch under **Use with**. Your text carries into the file search automatically.
 
-Raycast controls this list; extensions cannot add themselves on installation. You can also enter a query as the command’s optional argument.
+Raycast controls this list; extensions cannot add themselves on installation.
 
 ## Make it yours
 
