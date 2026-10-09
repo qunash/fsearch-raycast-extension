@@ -39,7 +39,7 @@ The type menu adds a `type:` or `kind:` filter; leave it on Everything when writ
 - Home screen with saved searches (⌘ ⇧ S), quick searches, and places.
 - Preview pane (⌘ D): images, text and code, Word, RTF, and OpenDocument text, archive listings, property lists, and Quick Look thumbnails of PDFs, Office files, HEIC, video, and fonts, with page counts, durations, and pixel sizes. Text previews open at the first matching line.
 - Content matches with line numbers.
-- Open, Open With, Reveal in Finder, Quick Look, copy the file, its name, or its path, paste it into the front Finder window, Move to Trash.
+- Open, Open With, Reveal in Finder, Quick Look, copy the file, its name, or its path, paste it into the front Finder window or into the app behind Raycast, Move to Trash.
 - Works as a Raycast fallback command: add **Search Files** under Manage Fallback Commands and typed text carries over.
 - Automatic retries while the daemon starts or the index builds. Full Disk Access and stale-index detection with one-click fixes.
 
@@ -54,6 +54,8 @@ The type menu adds a `type:` or `kind:` filter; leave it on Everything when writ
 | ⌘ ⇧ V    | Paste file to Finder          |
 | ⌘ ⌥ C    | Copy name                     |
 | ⌘ ⌃ C    | Copy path                     |
+| ⌘ ⌥ V    | Paste file to the front app   |
+| ⌘ ⌃ V    | Paste path to the front app   |
 | ⌃ X      | Move to Trash                 |
 | ⌘ D      | Toggle preview                |
 | ⌘ R      | Refresh                       |

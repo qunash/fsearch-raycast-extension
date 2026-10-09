@@ -2,11 +2,13 @@ import {
   Action,
   ActionPanel,
   Alert,
+  Application,
   Clipboard,
   Color,
   confirmAlert,
   Detail,
   environment,
+  getFrontmostApplication,
   getPreferenceValues,
   Icon,
   List,
@@ -226,7 +228,7 @@ Words of five or more letters forgive one typo. \`'exact\`, \`^prefix\`, \`suffi
 
 ## Shortcuts
 
-**⏎** open · **⌘ ⏎** reveal in Finder · **⌘ Y** Quick Look · **⌘ ⇧ C** copy file · **⌘ ⇧ V** paste file to Finder · **⌘ ⌥ C** copy name · **⌘ ⌃ C** copy path · **⌃ X** trash · **⌘ D** preview pane · **⌘ ⇧ S** save search · **⌘ ⇧ H** home · **⌘ ⇧ F** choose folder · **⌘ F** search this folder · **⌘ ⇧ O** sort · **⌘ ⇧ M** show more (up to 500) · **⌘ ⇧ R** rebuild index
+**⏎** open · **⌘ ⏎** reveal in Finder · **⌘ Y** Quick Look · **⌘ ⇧ C** copy file · **⌘ ⇧ V** paste file to Finder · **⌘ ⌥ C** copy name · **⌘ ⌃ C** copy path · **⌘ ⌥ V** / **⌘ ⌃ V** paste file or path to the app behind Raycast · **⌃ X** trash · **⌘ D** preview pane · **⌘ ⇧ S** save search · **⌘ ⇧ H** home · **⌘ ⇧ F** choose folder · **⌘ F** search this folder · **⌘ ⇧ O** sort · **⌘ ⇧ M** show more (up to 500) · **⌘ ⇧ R** rebuild index
 
 ## Full Disk Access
 
@@ -619,6 +621,8 @@ export default function Search(props: LaunchProps) {
   const lastSetupError = useRef<SearchErrorKind | undefined>(undefined);
   const [rust, setRust] = useState(true);
   const [rebuilding, setRebuilding] = useState(false);
+  // The app behind Raycast, the target of the Paste to … actions.
+  const [frontApp, setFrontApp] = useState<Application>();
   // Raycast keeps the old row index when items change and reports it back after
   // our selection update; while this is set, that stale report is bounced to the top.
   const pendingSelection = useRef<{
@@ -637,6 +641,22 @@ export default function Search(props: LaunchProps) {
   const active = Boolean(
     query.trim() || filter || (scope && scope !== defaultScope),
   );
+
+  useEffect(() => {
+    getFrontmostApplication().then(
+      (app) => {
+        // Finder has its own paste action; Raycast itself is not a target.
+        if (
+          !["com.apple.finder", "com.raycast.macos"].includes(
+            app.bundleId ?? "",
+          )
+        ) {
+          setFrontApp(app);
+        }
+      },
+      () => undefined,
+    );
+  }, []);
   const currentSearch: SavedSearch = { query: query.trim(), filter, scope };
   const searchKey = `${currentSearch.query}\u0000${filter}\u0000${scope}`;
   const isSaved = saved.some((item) => sameSearch(item, currentSearch));
@@ -1784,6 +1804,14 @@ export default function Search(props: LaunchProps) {
                       shortcut={{ modifiers: ["cmd", "shift"], key: "v" }}
                       onAction={() => pasteToFinder(file)}
                     />
+                    {frontApp && (
+                      <Action.Paste
+                        title={`Paste File to ${frontApp.name}`}
+                        icon={{ fileIcon: frontApp.path }}
+                        content={{ file: file.path }}
+                        shortcut={{ modifiers: ["cmd", "opt"], key: "v" }}
+                      />
+                    )}
                     <Action.CopyToClipboard
                       title="Copy Name"
                       content={basename(file.path)}
@@ -1794,6 +1822,14 @@ export default function Search(props: LaunchProps) {
                       content={file.path}
                       shortcut={{ modifiers: ["cmd", "ctrl"], key: "c" }}
                     />
+                    {frontApp && (
+                      <Action.Paste
+                        title={`Paste Path to ${frontApp.name}`}
+                        icon={{ fileIcon: frontApp.path }}
+                        content={file.path}
+                        shortcut={{ modifiers: ["cmd", "ctrl"], key: "v" }}
+                      />
+                    )}
                     <Action
                       title={
                         file.kind === "dir"
