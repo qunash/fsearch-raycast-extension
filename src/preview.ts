@@ -338,7 +338,7 @@ export async function richTextContent(
 export async function archiveListing(
   path: string,
   signal?: AbortSignal,
-): Promise<{ entries: string[]; truncated: boolean } | undefined> {
+): Promise<{ entries: string[]; total: number } | undefined> {
   const extension = extname(path).toLowerCase();
   const zipLike = [".zip", ".jar", ".ipa", ".apk", ".xpi"].includes(extension);
   try {
@@ -356,7 +356,7 @@ export async function archiveListing(
     if (lines.length === 0) return undefined;
     return {
       entries: lines.slice(0, ARCHIVE_LINES),
-      truncated: lines.length > ARCHIVE_LINES,
+      total: lines.length,
     };
   } catch {
     return undefined;
@@ -376,49 +376,89 @@ export async function plistContent(
   }
 }
 
-export function hasMediaDetails(path: string): boolean {
-  return MEDIA_EXTENSIONS.includes(extname(path).toLowerCase());
+/** Parses `mdls` output into values; array values keep one entry per line. */
+export function parseSpotlight(output: string): Map<string, string[]> {
+  const values = new Map<string, string[]>();
+  let array: string | undefined;
+  for (const raw of output.split("\n")) {
+    const line = raw.trim();
+    if (array !== undefined) {
+      if (line === ")") array = undefined;
+      else
+        values.get(array)?.push(line.replace(/,$/, "").replace(/^"|"$/g, ""));
+      continue;
+    }
+    const match = line.match(/^(\w+)\s+=\s+(.*)$/);
+    if (!match || match[2] === "(null)") continue;
+    if (match[2] === "(") {
+      array = match[1];
+      values.set(array, []);
+    } else {
+      values.set(match[1], [match[2].replace(/^"|"$/g, "")]);
+    }
+  }
+  return values;
 }
 
-/** Short facts from Spotlight metadata: page count, duration, pixel size, title. */
-export async function mediaDetails(
+export interface SpotlightDetails {
+  /** Version, page count, duration, pixel size, title, download source. */
+  details?: string;
+  /** Finder tags. */
+  tags: string[];
+}
+
+/** Short facts Spotlight keeps about a file, folder, or application. */
+export async function spotlightDetails(
   path: string,
   signal?: AbortSignal,
-): Promise<string | undefined> {
+): Promise<SpotlightDetails> {
   try {
+    const names = [
+      "kMDItemVersion",
+      "kMDItemNumberOfPages",
+      "kMDItemDurationSeconds",
+      "kMDItemPixelWidth",
+      "kMDItemPixelHeight",
+      "kMDItemTitle",
+      "kMDItemWhereFroms",
+      "kMDItemUserTags",
+    ];
     const output = await runTool(
       "/usr/bin/mdls",
-      [
-        "-name",
-        "kMDItemNumberOfPages",
-        "-name",
-        "kMDItemDurationSeconds",
-        "-name",
-        "kMDItemPixelWidth",
-        "-name",
-        "kMDItemPixelHeight",
-        "-name",
-        "kMDItemTitle",
-        path,
-      ],
+      [...names.flatMap((name) => ["-name", name]), path],
       signal,
     );
-    const values = new Map<string, string>();
-    for (const line of output.split("\n")) {
-      const match = line.match(/^(\w+)\s+=\s+(.*)$/);
-      if (match && match[2] !== "(null)") values.set(match[1], match[2]);
-    }
+    const values = parseSpotlight(output);
+    const first = (name: string) => values.get(name)?.[0];
     const parts: string[] = [];
-    const pages = Number(values.get("kMDItemNumberOfPages"));
+    const version = first("kMDItemVersion");
+    if (version && extname(path).toLowerCase() === ".app") parts.push(version);
+    const pages = Number(first("kMDItemNumberOfPages"));
     if (pages > 0) parts.push(`${pages} ${pages === 1 ? "page" : "pages"}`);
-    const seconds = Number(values.get("kMDItemDurationSeconds"));
+    const seconds = Number(first("kMDItemDurationSeconds"));
     if (seconds > 0) parts.push(formatClock(seconds));
-    const width = Number(values.get("kMDItemPixelWidth"));
-    const height = Number(values.get("kMDItemPixelHeight"));
+    const width = Number(first("kMDItemPixelWidth"));
+    const height = Number(first("kMDItemPixelHeight"));
     if (width > 0 && height > 0) parts.push(`${width} × ${height}`);
-    const title = values.get("kMDItemTitle")?.replace(/^"|"$/g, "").trim();
+    const title = first("kMDItemTitle")?.trim();
     if (title && title !== basename(path)) parts.push(title);
-    return parts.length ? parts.join(" · ") : undefined;
+    const source = downloadHost(first("kMDItemWhereFroms"));
+    if (source) parts.push(`from ${source}`);
+    return {
+      details: parts.length ? parts.join(" · ") : undefined,
+      tags: values.get("kMDItemUserTags") ?? [],
+    };
+  } catch {
+    return { tags: [] };
+  }
+}
+
+/** The host a downloaded file came from, without a `www.` prefix. */
+export function downloadHost(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    return host || undefined;
   } catch {
     return undefined;
   }

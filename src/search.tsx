@@ -19,9 +19,10 @@ import {
   trash,
 } from "@raycast/api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
+import type { Stats } from "node:fs";
 import { homedir } from "node:os";
-import { mkdir, readdir, rm, stat } from "node:fs/promises";
+import { lstat, mkdir, readdir, readlink, rm, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import {
   codeBlock,
@@ -42,14 +43,13 @@ import {
   archiveListing,
   fileIcon,
   folderDetails,
-  hasMediaDetails,
-  mediaDetails,
   NATIVE_IMAGE_EXTENSIONS,
   plistContent,
   quickLookThumbnail,
   readHead,
   RICH_TEXT_EXTENSIONS,
   richTextContent,
+  spotlightDetails,
   THUMBNAIL_EXTENSIONS,
 } from "./preview";
 import {
@@ -178,8 +178,10 @@ interface SavedSearch {
 interface FilePreview {
   path: string;
   markdown: string;
-  /** Page count, duration, pixel size, or title from Spotlight metadata; item count for folders. */
+  /** Symlink target, item or entry count, and Spotlight facts, joined with " · ". */
   details?: string;
+  /** Finder tags. */
+  tags?: string[];
   size?: number;
   modified?: Date;
 }
@@ -421,19 +423,46 @@ async function buildPreview(
   terms: string[],
   signal: AbortSignal,
 ): Promise<FilePreview> {
-  const info = await stat(path);
-  const base = {
+  const own = await lstat(path);
+  const target = own.isSymbolicLink() ? await readlink(path) : undefined;
+  // Preview what a link points to; a broken link keeps its own stat.
+  const info = target ? await stat(path).catch(() => own) : own;
+  const spotlight = spotlightDetails(path, signal);
+  const body = await previewBody(path, info, matches, terms, signal);
+  const found = await spotlight;
+  const details = [
+    target && `→ ${displayPath(resolve(dirname(path), target))}`,
+    body.details,
+    found.details,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return {
     path,
     size: info.size,
     modified: info.mtime,
+    markdown: body.markdown,
+    details: details || undefined,
+    tags: found.tags,
   };
+}
+
+interface PreviewBody {
+  markdown: string;
+  details?: string;
+}
+
+async function previewBody(
+  path: string,
+  info: Stats,
+  matches: Match[] | undefined,
+  terms: string[],
+  signal: AbortSignal,
+): Promise<PreviewBody> {
   if (info.isDirectory()) {
     const extension = extname(path).toLowerCase();
     if (extension === ".app") {
-      return {
-        ...base,
-        markdown: await iconMarkdown(path, true, info.mtimeMs, signal),
-      };
+      return { markdown: await iconMarkdown(path, true, info.mtimeMs, signal) };
     }
     // iWork documents and other bundles are folders with a thumbnail generator.
     if (THUMBNAIL_EXTENSIONS.includes(extension)) {
@@ -446,45 +475,34 @@ async function buildPreview(
       );
       if (thumbnail) {
         return {
-          ...base,
           markdown: imageMarkdown(fileUrl(thumbnail.path), thumbnail.size),
-          details: await mediaDetails(path, signal),
         };
       }
     }
     return {
-      ...base,
       markdown: await iconMarkdown(path, true, info.mtimeMs, signal),
       details: await folderDetails(path),
     };
   }
   if (!info.isFile()) {
-    return {
-      ...base,
-      markdown: await iconMarkdown(path, false, info.mtimeMs, signal),
-    };
+    return { markdown: await iconMarkdown(path, false, info.mtimeMs, signal) };
   }
   if (matches && matches.length > 0) {
     const markdown =
       (await matchContextMarkdown(path, info.size, matches)) ??
       matchListMarkdown(path, matches);
-    return { ...base, markdown };
+    return { markdown };
   }
   const extension = extname(path).toLowerCase();
-  const details = hasMediaDetails(path)
-    ? mediaDetails(path, signal)
-    : Promise.resolve(undefined);
   if (NATIVE_IMAGE_EXTENSIONS.includes(extension)) {
-    if (info.size > PREVIEW_IMAGE_BYTES) {
-      return {
-        ...base,
-        markdown: await iconMarkdown(path, false, info.mtimeMs, signal),
-      };
-    }
     const header = await readHead(path, IMAGE_HEADER_BYTES);
+    const size = imageDimensions(header);
     return {
-      ...base,
-      markdown: imageMarkdown(fileUrl(path), imageDimensions(header)),
+      markdown:
+        info.size > PREVIEW_IMAGE_BYTES
+          ? await iconMarkdown(path, false, info.mtimeMs, signal)
+          : imageMarkdown(fileUrl(path), size),
+      details: size && `${size.width} × ${size.height}`,
     };
   }
   if (RICH_TEXT_EXTENSIONS.includes(extension)) {
@@ -495,22 +513,21 @@ async function buildPreview(
         found.length > 0
           ? await matchContextMarkdown(path, info.size, found, content.text)
           : undefined;
-      return {
-        ...base,
-        markdown: markdown ?? codeBlock(content.text),
-        details: await details,
-      };
+      return { markdown: markdown ?? codeBlock(content.text) };
     }
   }
   if (ARCHIVE_EXTENSIONS.includes(extension)) {
     const listing = await archiveListing(path, signal);
     if (listing) {
-      return { ...base, markdown: codeBlock(listing.entries.join("\n")) };
+      return {
+        markdown: codeBlock(listing.entries.join("\n")),
+        details: `${listing.total} ${listing.total === 1 ? "entry" : "entries"}`,
+      };
     }
   }
   if (extension === ".plist") {
     const content = await plistContent(path, signal);
-    if (content) return { ...base, markdown: codeBlock(content) };
+    if (content) return { markdown: codeBlock(content) };
   }
   if (
     THUMBNAIL_EXTENSIONS.includes(extension) ||
@@ -523,40 +540,30 @@ async function buildPreview(
       THUMBNAIL_CACHE,
       signal,
     );
-    if (thumbnail) {
-      return {
-        ...base,
-        markdown: imageMarkdown(fileUrl(thumbnail.path), thumbnail.size),
-        details: await details,
-      };
-    }
     return {
-      ...base,
-      markdown: await iconMarkdown(path, false, info.mtimeMs, signal),
-      details: await details,
+      markdown: thumbnail
+        ? imageMarkdown(fileUrl(thumbnail.path), thumbnail.size)
+        : await iconMarkdown(path, false, info.mtimeMs, signal),
     };
   }
   // Bound reads to 32 KiB: large files must not block selection or flood the detail pane.
   const sample = await readHead(path, PREVIEW_BYTES);
   if (sample.length === 0) {
-    return { ...base, markdown: "*This file is empty.*" };
+    return { markdown: "*This file is empty.*" };
   }
   const truncated = info.size > sample.length;
   const text = decodeTextSample(sample, truncated);
   if (text === undefined) {
     // Unknown binary formats and non-UTF-8 text: show the Finder icon.
-    return {
-      ...base,
-      markdown: await iconMarkdown(path, false, info.mtimeMs, signal),
-    };
+    return { markdown: await iconMarkdown(path, false, info.mtimeMs, signal) };
   }
   // Filename searches: open the preview where the query words first appear.
   const found = findTermLines(text, terms);
   if (found.length > 0) {
     const markdown = await matchContextMarkdown(path, info.size, found, text);
-    if (markdown) return { ...base, markdown };
+    if (markdown) return { markdown };
   }
-  return { ...base, markdown: codeBlock(text, languageFor(path)) };
+  return { markdown: codeBlock(text, languageFor(path)) };
 }
 
 export default function Search(props: LaunchProps) {
@@ -1691,6 +1698,13 @@ export default function Search(props: LaunchProps) {
                               color={Color.SecondaryText}
                             />
                           )}
+                          {preview?.tags?.map((tag) => (
+                            <List.Item.Detail.Metadata.TagList.Item
+                              key={tag}
+                              text={tag}
+                              color={Color.Purple}
+                            />
+                          ))}
                           {file.matches && (
                             <List.Item.Detail.Metadata.TagList.Item
                               text={`${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`}

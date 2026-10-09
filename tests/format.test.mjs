@@ -16,7 +16,12 @@ import {
   languageFor,
   normalizeQuery,
 } from "../src/format.ts";
-import { folderDetails, formatClock } from "../src/preview.ts";
+import {
+  downloadHost,
+  folderDetails,
+  formatClock,
+  parseSpotlight,
+} from "../src/preview.ts";
 
 test("formats sizes and durations for humans", () => {
   assert.equal(formatSize(0), "0 B");
@@ -179,4 +184,27 @@ test("folderDetails counts visible items like Finder", async () => {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("parses Spotlight output including arrays and picks download hosts", () => {
+  const values = parseSpotlight(
+    [
+      'kMDItemVersion      = "1.23.2"',
+      "kMDItemNumberOfPages = (null)",
+      "kMDItemWhereFroms   = (",
+      '    "https://www.github.com/x/y/releases/a.zip",',
+      '    "https://github.com/x/y"',
+      ")",
+      "kMDItemUserTags     = (",
+      "    Red,",
+      '    "Important stuff"',
+      ")",
+    ].join("\n"),
+  );
+  assert.deepEqual(values.get("kMDItemVersion"), ["1.23.2"]);
+  assert.equal(values.has("kMDItemNumberOfPages"), false);
+  assert.deepEqual(values.get("kMDItemUserTags"), ["Red", "Important stuff"]);
+  assert.equal(downloadHost(values.get("kMDItemWhereFroms")[0]), "github.com");
+  assert.equal(downloadHost("not a url"), undefined);
+  assert.equal(downloadHost(undefined), undefined);
 });
