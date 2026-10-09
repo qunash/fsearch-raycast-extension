@@ -3,7 +3,7 @@
   "name": "fsearch",
   "title": "FSearch",
   "description": "Find files across your Mac with fuzzy search, powerful filters, and indexed content search.",
-  "icon": "fsearch-icon.png",
+  "icon": "fsearch-icon-v2.png",
   "author": "anzor",
   "license": "MIT",
   "platforms": [
