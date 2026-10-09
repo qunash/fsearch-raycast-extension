@@ -67,9 +67,10 @@ const PREVIEW_IMAGE_BYTES = 20 * 1024 * 1024;
 const IMAGE_HEADER_BYTES = 256 * 1024;
 // The detail pane is roughly half of Raycast's window and ~365pt tall at the
 // default size. Image plus two metadata rows (Where, and a tag row with kind,
-// size, and date) must fit without scrolling. Raycast scales wider images down.
+// size, and date) fill the pane so the metadata sits at the bottom, without
+// scrolling. Raycast scales wider images down.
 const PREVIEW_MAX_WIDTH = 400;
-const PREVIEW_MAX_HEIGHT = 230;
+const PREVIEW_MAX_HEIGHT = 300;
 const SAVED_SEARCHES_KEY = "saved-searches";
 const FULL_DISK_ACCESS_SETTINGS =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
