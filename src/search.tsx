@@ -5,6 +5,7 @@ import {
   Color,
   confirmAlert,
   Detail,
+  environment,
   getPreferenceValues,
   Icon,
   List,
@@ -19,7 +20,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { basename, dirname, extname, join } from "node:path";
 import { homedir } from "node:os";
-import { open as openFile, stat } from "node:fs/promises";
+import { mkdir, open as openFile, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import {
   codeBlock,
@@ -28,11 +29,25 @@ import {
   displayPath,
   fitPreviewSize,
   formatDuration,
+  ImageSize,
   formatSize,
   imageDimensions,
   isProtectedPath,
   languageFor,
+  normalizeQuery,
 } from "./format";
+import {
+  ARCHIVE_EXTENSIONS,
+  archiveListing,
+  hasMediaDetails,
+  mediaDetails,
+  NATIVE_IMAGE_EXTENSIONS,
+  plistContent,
+  quickLookThumbnail,
+  RICH_TEXT_EXTENSIONS,
+  richTextContent,
+  THUMBNAIL_EXTENSIONS,
+} from "./preview";
 import {
   DEFAULT_BINARY,
   findUnindexedProtectedFolders,
@@ -113,7 +128,7 @@ const sorts = [
   { title: "Recently Modified", value: "modified" },
   { title: "Largest First", value: "size" },
 ];
-const imageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
+const THUMBNAIL_CACHE = join(environment.supportPath, "thumbnails");
 
 interface SavedSearch {
   query: string;
@@ -131,6 +146,8 @@ interface Preferences {
 interface FilePreview {
   path: string;
   markdown: string;
+  /** Page count, duration, pixel size, or title from Spotlight metadata. */
+  details?: string;
   size?: number;
   modified?: Date;
 }
@@ -162,7 +179,7 @@ Raycast controls this list; extensions cannot add themselves on installation. Yo
 
 Save your current query, file type, and folder with **⌘ ⇧ S**. Saved searches appear on the home screen. Use **⌘ ⇧ H** to return there.
 
-Use **⌘ ⇧ F** to change the search folder, or **⌘ F** on a result to search its folder. **⌘ ⇧ O** sorts the loaded results. The preview pane opens by default for images and UTF-8 text files; turn it off in preferences or toggle it with **⌘ D**. Content matches show their line numbers automatically. Other formats use **⌘ Y** for Quick Look. Select **Show More**, or use **⌘ ⇧ M**, to expand the result limit, up to 500 files.
+Use **⌘ ⇧ F** to change the search folder, or **⌘ F** on a result to search its folder. **⌘ ⇧ O** sorts the loaded results. The preview pane shows images, text and code, the text of Word and RTF documents, archive listings, and Quick Look thumbnails of PDFs, spreadsheets, presentations, videos, fonts, and other formats. Toggle it with **⌘ D**. Content matches show their line numbers automatically. **⌘ Y** opens the full Quick Look preview. Select **Show More**, or use **⌘ ⇧ M**, to expand the result limit, up to 500 files.
 
 ## A few useful searches
 
@@ -259,9 +276,24 @@ async function readHead(path: string, limit: number): Promise<Uint8Array> {
   }
 }
 
+function fileUrl(path: string): string {
+  return pathToFileURL(path).href.replace(/\(/g, "%28").replace(/\)/g, "%29");
+}
+
+function imageMarkdown(url: string, size: ImageSize | undefined): string {
+  // Size the image from its header so wide and tall pictures both fit the pane.
+  const fit = fitPreviewSize(size, PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT);
+  return `![File preview](${url}?raycast-width=${fit.width}&raycast-height=${fit.height})`;
+}
+
+function quickLookHint(path: string, kind: string): string {
+  return `*No inline preview for this ${describeKind(path, kind).toLowerCase()}.* Press **⌘ Y** for Quick Look.`;
+}
+
 async function buildPreview(
   path: string,
   hasMatches: boolean,
+  signal: AbortSignal,
 ): Promise<FilePreview> {
   const info = await stat(path);
   const base = {
@@ -270,38 +302,103 @@ async function buildPreview(
     modified: info.mtime,
   };
   if (info.isDirectory()) {
-    const isApp = extname(path).toLowerCase() === ".app";
+    const extension = extname(path).toLowerCase();
+    if (extension === ".app") {
+      return {
+        ...base,
+        markdown:
+          "## Application\n\nPress **Return** to launch, or **⌘ Return** to reveal in Finder.",
+      };
+    }
+    // iWork documents and other bundles are folders with a thumbnail generator.
+    if (THUMBNAIL_EXTENSIONS.includes(extension)) {
+      const thumbnail = await quickLookThumbnail(
+        path,
+        info.size,
+        info.mtimeMs,
+        THUMBNAIL_CACHE,
+        signal,
+      );
+      if (thumbnail) {
+        return {
+          ...base,
+          markdown: imageMarkdown(fileUrl(thumbnail.path), thumbnail.size),
+          details: await mediaDetails(path, signal),
+        };
+      }
+    }
     return {
       ...base,
-      markdown: isApp
-        ? "## Application\n\nPress **Return** to launch, or **⌘ Return** to reveal in Finder."
-        : "## Folder\n\nPress **⌘ F** to search inside, or **Return** to open in Finder.",
+      markdown:
+        "## Folder\n\nPress **⌘ F** to search inside, or **Return** to open in Finder.",
     };
   }
   if (!info.isFile() || hasMatches) {
-    return { ...base, markdown: "Press **⌘ Y** for Quick Look." };
+    return { ...base, markdown: quickLookHint(path, "file") };
   }
   const extension = extname(path).toLowerCase();
-  if (imageExtensions.includes(extension)) {
+  const details = hasMediaDetails(path)
+    ? mediaDetails(path, signal)
+    : Promise.resolve(undefined);
+  if (NATIVE_IMAGE_EXTENSIONS.includes(extension)) {
     if (info.size > PREVIEW_IMAGE_BYTES) {
       return {
         ...base,
         markdown: `*This image is ${formatSize(info.size)}.* Press **⌘ Y** for Quick Look.`,
       };
     }
-    const url = pathToFileURL(path)
-      .href.replace(/\(/g, "%28")
-      .replace(/\)/g, "%29");
-    // Size the image from its header so wide and tall pictures both fit the pane.
     const header = await readHead(path, IMAGE_HEADER_BYTES);
-    const fit = fitPreviewSize(
-      imageDimensions(header),
-      PREVIEW_MAX_WIDTH,
-      PREVIEW_MAX_HEIGHT,
-    );
     return {
       ...base,
-      markdown: `![File preview](${url}?raycast-width=${fit.width}&raycast-height=${fit.height})`,
+      markdown: imageMarkdown(fileUrl(path), imageDimensions(header)),
+    };
+  }
+  if (RICH_TEXT_EXTENSIONS.includes(extension)) {
+    const content = await richTextContent(path, signal);
+    if (content) {
+      let markdown = codeBlock(content.text);
+      if (content.truncated) {
+        markdown += "\n\n*Preview shows the beginning of the document.*";
+      }
+      return { ...base, markdown, details: await details };
+    }
+  }
+  if (ARCHIVE_EXTENSIONS.includes(extension)) {
+    const listing = await archiveListing(path, signal);
+    if (listing) {
+      let markdown = codeBlock(listing.entries.join("\n"));
+      if (listing.truncated) {
+        markdown += `\n\n*Showing the first ${listing.entries.length} entries.*`;
+      }
+      return { ...base, markdown };
+    }
+  }
+  if (extension === ".plist") {
+    const content = await plistContent(path, signal);
+    if (content) return { ...base, markdown: codeBlock(content) };
+  }
+  if (
+    THUMBNAIL_EXTENSIONS.includes(extension) ||
+    RICH_TEXT_EXTENSIONS.includes(extension)
+  ) {
+    const thumbnail = await quickLookThumbnail(
+      path,
+      info.size,
+      info.mtimeMs,
+      THUMBNAIL_CACHE,
+      signal,
+    );
+    if (thumbnail) {
+      return {
+        ...base,
+        markdown: imageMarkdown(fileUrl(thumbnail.path), thumbnail.size),
+        details: await details,
+      };
+    }
+    return {
+      ...base,
+      markdown: quickLookHint(path, "file"),
+      details: await details,
     };
   }
   // Bound reads to 32 KiB: large files must not block selection or flood the detail pane.
@@ -312,8 +409,8 @@ async function buildPreview(
   const truncated = info.size > sample.length;
   const text = decodeTextSample(sample, truncated);
   if (text === undefined) {
-    // Binary documents, unsupported images, and non-UTF-8 text use Quick Look instead.
-    return { ...base, markdown: "Press **⌘ Y** for Quick Look." };
+    // Unknown binary formats and non-UTF-8 text use Quick Look instead.
+    return { ...base, markdown: quickLookHint(path, "file") };
   }
   let markdown = codeBlock(text, languageFor(path));
   if (truncated) {
@@ -474,7 +571,7 @@ export default function Search(
       try {
         const response = await searchFiles(
           binaryPath,
-          [query.trim(), filter].filter(Boolean).join(" "),
+          [normalizeQuery(query), filter].filter(Boolean).join(" "),
           scope || undefined,
           limit,
           controller.signal,
@@ -562,10 +659,16 @@ export default function Search(
       return;
     }
     setPreviewLoading(true);
+    const controller = new AbortController();
     // Only inspect the selected result, after keyboard navigation settles.
     const timer = setTimeout(async () => {
       try {
-        const preview = await buildPreview(previewPath, hasMatches);
+        await mkdir(THUMBNAIL_CACHE, { recursive: true });
+        const preview = await buildPreview(
+          previewPath,
+          hasMatches,
+          controller.signal,
+        );
         if (!disposed) setFilePreview(preview);
       } catch (cause) {
         if (!disposed) {
@@ -580,6 +683,7 @@ export default function Search(
     }, 120);
     return () => {
       disposed = true;
+      controller.abort();
       clearTimeout(timer);
     };
   }, [previewPath, hasMatches, retry]);
@@ -1293,6 +1397,13 @@ export default function Search(
                               : "—"
                         }
                       />
+                      {filePreview?.path === file.path &&
+                        filePreview.details && (
+                          <List.Item.Detail.Metadata.Label
+                            title="Details"
+                            text={filePreview.details}
+                          />
+                        )}
                       {file.matches && (
                         <List.Item.Detail.Metadata.Label
                           title="Matches"

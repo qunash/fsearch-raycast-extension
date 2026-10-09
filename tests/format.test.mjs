@@ -148,3 +148,20 @@ test("reads image dimensions from headers", async () => {
   });
   assert.deepEqual(fitPreviewSize(undefined), { width: 280, height: 150 });
 });
+
+test("normalizeQuery turns wildcards into fsearch filters", async () => {
+  const { normalizeQuery } = await import("../src/format.ts");
+  assert.equal(normalizeQuery("*.docx"), "ext:docx");
+  assert.equal(normalizeQuery("*.PDF"), "ext:pdf");
+  assert.equal(normalizeQuery("report*.pdf"), "report ext:pdf");
+  assert.equal(normalizeQuery("*mario*"), "mario");
+  assert.equal(normalizeQuery("ext:pdf in:~/Docs*"), "ext:pdf in:~/Docs*");
+  assert.equal(normalizeQuery("  plain   words "), "plain words");
+  assert.equal(normalizeQuery("*"), "");
+});
+
+test("formatClock renders durations", async () => {
+  const { formatClock } = await import("../src/preview.ts");
+  assert.equal(formatClock(29.44), "0:29");
+  assert.equal(formatClock(3725), "1:02:05");
+});

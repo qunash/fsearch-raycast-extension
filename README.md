@@ -6,8 +6,9 @@ Fast, local file search in Raycast, powered by [noahdunnagan/fsearch](https://gi
 - Save any query with its file type and folder; run or remove it from the home screen.
 - Nine file-type choices, folder scoping, and search-inside-folder actions.
 - Fuzzy filename search with original ranking; sort loaded results by name, modification date, or size.
-- A split view previews supported images (sized from their headers to fit the pane) and UTF-8 text with syntax highlighting alongside file metadata. Content searches show line-numbered matches. Quick Look handles other formats.
-- Preview text is limited to 32 KiB; inline PNG, JPEG, GIF, and WebP previews are limited to 20 MiB. Only the selected file is read.
+- A split view previews the selected file alongside its metadata: images, text and code with syntax highlighting, the text of Word, RTF, and OpenDocument files, archive listings, property lists, and Quick Look thumbnails of PDFs, spreadsheets, presentations, HEIC and other images, videos, and fonts. Spotlight metadata adds page counts, durations, and pixel sizes. Content searches show line-numbered matches.
+- Preview text is limited to 32 KiB; inline PNG, JPEG, GIF, and WebP previews are limited to 20 MiB. Thumbnails are cached in the extension's support folder and generated with a 4-second limit. Only the selected file is read.
+- Shell wildcards are translated: `*.docx` searches `ext:docx`, and `report*.pdf` searches `report ext:pdf`.
 - Native file icons, readable sizes and dates, Quick Look, Open With, Finder reveal, copy actions, and Move to Trash with confirmation.
 - Stable results while typing, cancellation of obsolete requests, and automatic retry while the daemon starts or builds its first index.
 - Full Disk Access awareness: the home screen and empty states explain when protected folders are being skipped, link to System Settings, and offer an index rebuild once access is granted.
@@ -87,7 +88,7 @@ The type menu adds a filter to the query. Leave it on Everything when writing yo
 | ⌘ ⇧ M    | Show more results                 |
 | ⌘ ⇧ R    | Rebuild the index                 |
 
-The preview keeps the same four metadata rows (Where, Kind, Size, Modified) while loading, including unavailable values shown as “—”. Inline images are sized from their headers to fit above the metadata without scrolling at Raycast’s default window size.
+The preview keeps the same four metadata rows (Where, Kind, Size, Modified) while loading, including unavailable values shown as “—”; a Details row appears when Spotlight knows the page count, duration, or pixel size. Inline images and thumbnails are sized to fit above the metadata without scrolling at Raycast’s default window size. Previews use only tools shipped with macOS: `qlmanage`, `textutil`, `unzip`, `tar`, `plutil`, and `mdls`.
 
 ## Development
 

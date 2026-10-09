@@ -253,3 +253,30 @@ export function languageFor(path: string): string {
   };
   return aliases[extension] ?? "";
 }
+
+/**
+ * Translates shell-style wildcards into fsearch syntax. fsearch matches `*`
+ * and `?` literally, so `*.docx` finds nothing; it becomes `ext:docx`, and
+ * `report*.pdf` becomes `report ext:pdf`. Wildcards elsewhere are dropped
+ * because fuzzy matching already allows gaps. Filters such as `ext:` or
+ * `in:` are left untouched.
+ */
+export function normalizeQuery(query: string): string {
+  return query
+    .split(/\s+/)
+    .filter(Boolean)
+    .flatMap((token) => {
+      if (!/[*?]/.test(token) || token.includes(":")) return [token];
+      const extensionMatch = token.match(/^(.*)\*\.([A-Za-z0-9]{1,10})$/);
+      if (extensionMatch) {
+        const stem = extensionMatch[1].replace(/[*?]/g, "");
+        return [
+          ...(stem ? [stem] : []),
+          `ext:${extensionMatch[2].toLowerCase()}`,
+        ];
+      }
+      const stripped = token.replace(/[*?]/g, "");
+      return stripped ? [stripped] : [];
+    })
+    .join(" ");
+}
