@@ -13,7 +13,7 @@ Fast, local file search in Raycast, powered by [noahdunnagan/fsearch](https://gi
 - Stable results while typing, cancellation of obsolete requests, and automatic retry while the daemon starts or builds its first index.
 - Full Disk Access awareness: the home screen and empty states explain when protected folders are being skipped, link to System Settings, and offer an index rebuild once access is granted.
 - A new query always starts at the top of the results instead of keeping the previous row selected.
-- Expand searches up to 500 results. Clear indicators for limits, partial results, content indexing, and query latency.
+- Expand searches up to 500 results. A note at the end of the list explains partial results, content indexing, and the 500-result limit.
 - A custom F-in-a-magnifying-glass icon and an in-app search guide.
 
 ## Install
@@ -88,7 +88,7 @@ The type menu adds a filter to the query. Leave it on Everything when writing yo
 | ⌘ ⇧ M    | Show more results                 |
 | ⌘ ⇧ R    | Rebuild the index                 |
 
-The preview keeps the same four metadata rows (Where, Kind, Size, Modified) while loading, including unavailable values shown as “—”; a Details row appears when Spotlight knows the page count, duration, or pixel size. Inline images and thumbnails are sized to fit above the metadata without scrolling at Raycast’s default window size. Previews use only tools shipped with macOS: `qlmanage`, `textutil`, `unzip`, `tar`, `plutil`, and `mdls`.
+The preview shows the folder on one row and kind, size, modification date, and any Spotlight details (page count, duration, pixel size) as tags on a second row, so most of the pane is left for the image or text. Inline images and thumbnails are sized to fit above the metadata without scrolling at Raycast’s default window size. Previews use only tools shipped with macOS: `qlmanage`, `textutil`, `unzip`, `tar`, `plutil`, and `mdls`.
 
 ## Development
 

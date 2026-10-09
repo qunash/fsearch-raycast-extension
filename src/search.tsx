@@ -28,7 +28,6 @@ import {
   describeKind,
   displayPath,
   fitPreviewSize,
-  formatDuration,
   ImageSize,
   formatSize,
   imageDimensions,
@@ -67,9 +66,10 @@ const PREVIEW_IMAGE_BYTES = 20 * 1024 * 1024;
 // Enough header to reach the JPEG frame marker even behind a large EXIF block.
 const IMAGE_HEADER_BYTES = 256 * 1024;
 // The detail pane is roughly half of Raycast's window and ~365pt tall at the
-// default size. Image plus four metadata rows (28pt each) must fit without scrolling.
-const PREVIEW_MAX_WIDTH = 280;
-const PREVIEW_MAX_HEIGHT = 150;
+// default size. Image plus two metadata rows (Where, and a tag row with kind,
+// size, and date) must fit without scrolling. Raycast scales wider images down.
+const PREVIEW_MAX_WIDTH = 400;
+const PREVIEW_MAX_HEIGHT = 230;
 const SAVED_SEARCHES_KEY = "saved-searches";
 const FULL_DISK_ACCESS_SETTINGS =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
@@ -288,6 +288,39 @@ function imageMarkdown(url: string, size: ImageSize | undefined): string {
 
 function quickLookHint(path: string, kind: string): string {
   return `*No inline preview for this ${describeKind(path, kind).toLowerCase()}.* Press **⌘ Y** for Quick Look.`;
+}
+
+/** A short, specific explanation of why a file could not be read. */
+function previewErrorMarkdown(path: string, cause: unknown): string {
+  const code =
+    typeof cause === "object" && cause && "code" in cause
+      ? String(cause.code)
+      : "";
+  const inCloud = path.includes("/Library/CloudStorage/");
+  const reason = (() => {
+    switch (code) {
+      case "ETIMEDOUT":
+      case "EAGAIN":
+        return inCloud
+          ? "This file lives in cloud storage and isn't downloaded. Open it to download a copy."
+          : "Reading the file timed out.";
+      case "ENOENT":
+        return "The file has been moved or deleted since it was indexed.";
+      case "EACCES":
+      case "EPERM":
+        return "macOS denied access. Grant Full Disk Access to Raycast to preview it.";
+      case "EISDIR":
+        return "This is a folder.";
+      default:
+        return inCloud
+          ? "This file lives in cloud storage and may not be downloaded."
+          : (cause instanceof Error ? cause.message : String(cause)).replace(
+              /^Error: /,
+              "",
+            );
+    }
+  })();
+  return `### Can't preview this file\n\n${reason}\n\nPress **Return** to open it or **⌘ Y** for Quick Look.`;
 }
 
 async function buildPreview(
@@ -674,7 +707,7 @@ export default function Search(
         if (!disposed) {
           setFilePreview({
             path: previewPath,
-            markdown: `**Preview unavailable**\n\n${codeBlock(String(cause))}\n\nThe file may have moved or require additional permissions.`,
+            markdown: previewErrorMarkdown(previewPath, cause),
           });
         }
       } finally {
@@ -1020,21 +1053,15 @@ export default function Search(
     };
   })();
 
-  const sectionSubtitle = (() => {
-    if (!result) return undefined;
-    const parts: string[] = [];
-    if (loading) parts.push("Updating…");
-    else if (!result.complete) parts.push("Partial results");
-    else if (result.indexing) parts.push("Indexing content");
-    else if (sortedFiles.length >= limit)
-      parts.push(limit < MAX_LIMIT ? "More results: ⌘⇧M" : "500-result limit");
-    if (effectiveSort !== "relevance") {
-      parts.push(
-        sorts.find((item) => item.value === effectiveSort)?.title ?? "",
-      );
-    }
-    if (!loading) parts.push(formatDuration(result.tookUs));
-    return parts.filter(Boolean).join(" · ");
+  const resultsNote = (() => {
+    if (!result || loading) return undefined;
+    if (!result.complete)
+      return "Partial results: fsearch ran out of time. Narrow the query.";
+    if (result.indexing)
+      return "Content is still being indexed; more matches may appear.";
+    if (sortedFiles.length >= MAX_LIMIT)
+      return "Showing the first 500 results. Narrow the query to see others.";
+    return undefined;
   })();
 
   return (
@@ -1298,191 +1325,199 @@ export default function Search(
           </ActionPanel>
         }
       />
-      {active && result && (
-        <List.Section
-          title={`${sortedFiles.length} ${sortedFiles.length === 1 ? "file" : "files"}`}
-          subtitle={sectionSubtitle}
-        >
-          {sortedFiles.map((file) => (
-            <List.Item
-              key={file.path}
-              id={file.path}
-              title={basename(file.path) || file.path}
-              subtitle={
-                showDetails ? undefined : displayPath(dirname(file.path))
-              }
-              icon={{ fileIcon: file.path }}
-              quickLook={{ path: file.path, name: basename(file.path) }}
-              accessories={
-                showDetails
-                  ? []
-                  : file.matches
-                    ? [
-                        {
-                          tag: {
-                            value: `${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`,
-                            color: Color.Blue,
-                          },
+      {active &&
+        result &&
+        sortedFiles.map((file) => (
+          <List.Item
+            key={file.path}
+            id={file.path}
+            title={basename(file.path) || file.path}
+            subtitle={showDetails ? undefined : displayPath(dirname(file.path))}
+            icon={{ fileIcon: file.path }}
+            quickLook={{ path: file.path, name: basename(file.path) }}
+            accessories={
+              showDetails
+                ? []
+                : file.matches
+                  ? [
+                      {
+                        tag: {
+                          value: `${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`,
+                          color: Color.Blue,
                         },
-                      ]
-                    : [
-                        {
-                          text:
-                            file.kind === "dir"
-                              ? describeKind(file.path, file.kind)
-                              : file.kind === "link"
-                                ? "Link"
-                                : file.size !== undefined
-                                  ? formatSize(file.size)
-                                  : "",
-                        },
-                        ...(file.mtime
-                          ? [
-                              {
-                                date: new Date(file.mtime * 1000),
-                                tooltip: `Modified ${new Date(file.mtime * 1000).toLocaleString()}`,
-                              },
-                            ]
-                          : []),
-                      ]
-              }
-              detail={
-                <List.Item.Detail
-                  isLoading={previewLoading && file.path === previewPath}
-                  markdown={
-                    file.matches
-                      ? file.matches
-                          .map(
-                            (match) =>
-                              `**Line ${match.line}**\n\n${codeBlock(match.text, languageFor(file.path))}`,
-                          )
-                          .join("\n\n")
-                      : filePreview?.path === file.path
-                        ? filePreview.markdown
-                        : // Reserve the preview height without a visible loading label.
-                          `![](preview-placeholder.png?raycast-height=${PREVIEW_MAX_HEIGHT})`
-                  }
-                  metadata={
-                    <List.Item.Detail.Metadata>
-                      <List.Item.Detail.Metadata.Label
-                        title="Where"
-                        text={displayPath(dirname(file.path))}
-                      />
-                      <List.Item.Detail.Metadata.Label
-                        title="Kind"
+                      },
+                    ]
+                  : [
+                      {
+                        text:
+                          file.kind === "dir"
+                            ? describeKind(file.path, file.kind)
+                            : file.kind === "link"
+                              ? "Link"
+                              : file.size !== undefined
+                                ? formatSize(file.size)
+                                : "",
+                      },
+                      ...(file.mtime
+                        ? [
+                            {
+                              date: new Date(file.mtime * 1000),
+                              tooltip: `Modified ${new Date(file.mtime * 1000).toLocaleString()}`,
+                            },
+                          ]
+                        : []),
+                    ]
+            }
+            detail={
+              <List.Item.Detail
+                isLoading={previewLoading && file.path === previewPath}
+                markdown={
+                  file.matches
+                    ? file.matches
+                        .map(
+                          (match) =>
+                            `**Line ${match.line}**\n\n${codeBlock(match.text, languageFor(file.path))}`,
+                        )
+                        .join("\n\n")
+                    : filePreview?.path === file.path
+                      ? filePreview.markdown
+                      : // Reserve the preview height without a visible loading label.
+                        `![](preview-placeholder.png?raycast-height=${PREVIEW_MAX_HEIGHT})`
+                }
+                metadata={
+                  <List.Item.Detail.Metadata>
+                    <List.Item.Detail.Metadata.Label
+                      title="Where"
+                      text={displayPath(dirname(file.path))}
+                    />
+                    <List.Item.Detail.Metadata.TagList title="">
+                      <List.Item.Detail.Metadata.TagList.Item
                         text={describeKind(file.path, file.kind)}
+                        color={Color.Blue}
                       />
-                      <List.Item.Detail.Metadata.Label
-                        title="Size"
-                        text={(() => {
-                          if (file.kind === "dir") return "—";
-                          const size =
-                            filePreview?.path === file.path
-                              ? (filePreview.size ?? file.size)
-                              : file.size;
-                          if (size === undefined) return "—";
-                          return size < 1024
-                            ? formatSize(size)
-                            : `${formatSize(size)} (${size.toLocaleString()} bytes)`;
-                        })()}
-                      />
-                      <List.Item.Detail.Metadata.Label
-                        title="Modified"
-                        text={
+                      {(() => {
+                        if (file.kind === "dir") return null;
+                        const size =
+                          filePreview?.path === file.path
+                            ? (filePreview.size ?? file.size)
+                            : file.size;
+                        return size === undefined ? null : (
+                          <List.Item.Detail.Metadata.TagList.Item
+                            text={formatSize(size)}
+                            color={Color.SecondaryText}
+                          />
+                        );
+                      })()}
+                      {(() => {
+                        const modified =
                           filePreview?.path === file.path &&
                           filePreview.modified
-                            ? filePreview.modified.toLocaleString()
+                            ? filePreview.modified
                             : file.mtime
-                              ? new Date(file.mtime * 1000).toLocaleString()
-                              : "—"
-                        }
-                      />
+                              ? new Date(file.mtime * 1000)
+                              : undefined;
+                        return modified ? (
+                          <List.Item.Detail.Metadata.TagList.Item
+                            text={modified.toLocaleDateString(undefined, {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                            })}
+                            color={Color.SecondaryText}
+                          />
+                        ) : null;
+                      })()}
                       {filePreview?.path === file.path &&
                         filePreview.details && (
-                          <List.Item.Detail.Metadata.Label
-                            title="Details"
+                          <List.Item.Detail.Metadata.TagList.Item
                             text={filePreview.details}
+                            color={Color.SecondaryText}
                           />
                         )}
                       {file.matches && (
-                        <List.Item.Detail.Metadata.Label
-                          title="Matches"
-                          text={`${file.matches.length}`}
+                        <List.Item.Detail.Metadata.TagList.Item
+                          text={`${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`}
+                          color={Color.Green}
                         />
                       )}
-                    </List.Item.Detail.Metadata>
-                  }
-                />
-              }
-              actions={
-                <ActionPanel>
-                  <ActionPanel.Section title={basename(file.path)}>
-                    <Action.Open
-                      title={
-                        file.kind === "dir"
-                          ? extname(file.path).toLowerCase() === ".app"
-                            ? "Launch Application"
-                            : "Open Folder"
-                          : "Open File"
-                      }
-                      target={file.path}
-                    />
-                    <Action.ShowInFinder
-                      path={file.path}
-                      shortcut={{ modifiers: ["cmd"], key: "return" }}
-                    />
-                    <Action.ToggleQuickLook
-                      shortcut={{ modifiers: ["cmd"], key: "y" }}
-                    />
-                    <Action.OpenWith path={file.path} />
-                    <Action.CopyToClipboard
-                      title="Copy Path"
-                      content={file.path}
-                      shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
-                    />
-                    <Action.CopyToClipboard
-                      title="Copy File"
-                      content={{ file: file.path }}
-                    />
-                    <Action.CopyToClipboard
-                      title="Copy Filename"
-                      content={basename(file.path)}
-                    />
-                    <Action
-                      title={
-                        file.kind === "dir"
-                          ? "Search Inside Folder"
-                          : "Search Containing Folder"
-                      }
-                      icon={Icon.Folder}
-                      shortcut={{ modifiers: ["cmd"], key: "f" }}
-                      onAction={() => {
-                        startSearch({
-                          scope:
-                            file.kind === "dir"
-                              ? file.path
-                              : dirname(file.path),
-                          query: "",
-                          filter: "",
-                        });
-                        setSelectedPath(null);
-                      }}
-                    />
-                    <Action
-                      title="Move to Trash"
-                      icon={Icon.Trash}
-                      style={Action.Style.Destructive}
-                      shortcut={{ modifiers: ["ctrl"], key: "x" }}
-                      onAction={() => moveToTrash(file)}
-                    />
-                  </ActionPanel.Section>
-                  {searchActions}
-                  {helpActions}
-                </ActionPanel>
-              }
-            />
-          ))}
-        </List.Section>
+                    </List.Item.Detail.Metadata.TagList>
+                  </List.Item.Detail.Metadata>
+                }
+              />
+            }
+            actions={
+              <ActionPanel>
+                <ActionPanel.Section title={basename(file.path)}>
+                  <Action.Open
+                    title={
+                      file.kind === "dir"
+                        ? extname(file.path).toLowerCase() === ".app"
+                          ? "Launch Application"
+                          : "Open Folder"
+                        : "Open File"
+                    }
+                    target={file.path}
+                  />
+                  <Action.ShowInFinder
+                    path={file.path}
+                    shortcut={{ modifiers: ["cmd"], key: "return" }}
+                  />
+                  <Action.ToggleQuickLook
+                    shortcut={{ modifiers: ["cmd"], key: "y" }}
+                  />
+                  <Action.OpenWith path={file.path} />
+                  <Action.CopyToClipboard
+                    title="Copy Path"
+                    content={file.path}
+                    shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
+                  />
+                  <Action.CopyToClipboard
+                    title="Copy File"
+                    content={{ file: file.path }}
+                  />
+                  <Action.CopyToClipboard
+                    title="Copy Filename"
+                    content={basename(file.path)}
+                  />
+                  <Action
+                    title={
+                      file.kind === "dir"
+                        ? "Search Inside Folder"
+                        : "Search Containing Folder"
+                    }
+                    icon={Icon.Folder}
+                    shortcut={{ modifiers: ["cmd"], key: "f" }}
+                    onAction={() => {
+                      startSearch({
+                        scope:
+                          file.kind === "dir" ? file.path : dirname(file.path),
+                        query: "",
+                        filter: "",
+                      });
+                      setSelectedPath(null);
+                    }}
+                  />
+                  <Action
+                    title="Move to Trash"
+                    icon={Icon.Trash}
+                    style={Action.Style.Destructive}
+                    shortcut={{ modifiers: ["ctrl"], key: "x" }}
+                    onAction={() => moveToTrash(file)}
+                  />
+                </ActionPanel.Section>
+                {searchActions}
+                {helpActions}
+              </ActionPanel>
+            }
+          />
+        ))}
+      {resultsNote && (
+        <List.Item
+          id="results-note"
+          title={resultsNote}
+          icon={{ source: Icon.Info, tintColor: Color.SecondaryText }}
+          actions={<ActionPanel>{searchActions}</ActionPanel>}
+        />
       )}
       {canLoadMore && (
         <List.Item
