@@ -70,8 +70,11 @@ const IMAGE_HEADER_BYTES = 256 * 1024;
 // its size however few rows it holds. Four rows fill that block exactly.
 const PREVIEW_MAX_WIDTH = 400;
 const PREVIEW_MAX_HEIGHT = 190;
-// Text previews are cut to what fits the markdown area, so nothing scrolls.
-const PREVIEW_LINES = 10;
+// Text previews are cut to what fits the markdown area, so nothing scrolls and
+// Raycast draws no fade. Long lines wrap, so the cut counts wrapped lines at
+// the pane's monospace width.
+const PREVIEW_LINES = 9;
+const PREVIEW_COLUMNS = 62;
 const SAVED_SEARCHES_KEY = "saved-searches";
 const FULL_DISK_ACCESS_SETTINGS =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
@@ -292,11 +295,18 @@ function quickLookHint(path: string, kind: string): string {
   return `*No inline preview for this ${describeKind(path, kind).toLowerCase()}.* Press **⌘ Y** for Quick Look.`;
 }
 
-/** Keeps the first `PREVIEW_LINES` lines of a text sample. */
-function screenful(text: string): { text: string; cut: boolean } {
+/** Keeps as many leading lines as fit the preview area once wrapped. */
+function screenful(text: string): { text: string } {
   const lines = text.replace(/\n$/, "").split("\n");
-  if (lines.length <= PREVIEW_LINES) return { text, cut: false };
-  return { text: lines.slice(0, PREVIEW_LINES).join("\n"), cut: true };
+  const kept: string[] = [];
+  let used = 0;
+  for (const line of lines) {
+    const rows = Math.max(1, Math.ceil(line.length / PREVIEW_COLUMNS));
+    if (used + rows > PREVIEW_LINES) break;
+    kept.push(line);
+    used += rows;
+  }
+  return { text: kept.join("\n") };
 }
 
 /** A short, specific explanation of why a file could not be read. */
@@ -399,8 +409,7 @@ async function buildPreview(
     const content = await richTextContent(path, signal);
     if (content) {
       const shown = screenful(content.text);
-      let markdown = codeBlock(shown.text);
-      if (shown.cut || content.truncated) markdown += "\n\n…";
+      const markdown = codeBlock(shown.text);
       return { ...base, markdown, details: await details };
     }
   }
@@ -408,8 +417,7 @@ async function buildPreview(
     const listing = await archiveListing(path, signal);
     if (listing) {
       const shown = screenful(listing.entries.join("\n"));
-      let markdown = codeBlock(shown.text);
-      if (shown.cut || listing.truncated) markdown += "\n\n…";
+      const markdown = codeBlock(shown.text);
       return { ...base, markdown };
     }
   }
@@ -419,7 +427,7 @@ async function buildPreview(
       const shown = screenful(content);
       return {
         ...base,
-        markdown: codeBlock(shown.text) + (shown.cut ? "\n\n…" : ""),
+        markdown: codeBlock(shown.text),
       };
     }
   }
@@ -459,8 +467,7 @@ async function buildPreview(
     return { ...base, markdown: quickLookHint(path, "file") };
   }
   const shown = screenful(text);
-  let markdown = codeBlock(shown.text, languageFor(path));
-  if (shown.cut || truncated) markdown += "\n\n…";
+  const markdown = codeBlock(shown.text, languageFor(path));
   return { ...base, markdown };
 }
 
@@ -1405,39 +1412,51 @@ export default function Search(
                   const modified =
                     preview?.modified ??
                     (file.mtime ? new Date(file.mtime * 1000) : undefined);
-                  const kind = [
-                    describeKind(file.path, file.kind),
-                    preview?.details,
-                    file.matches
-                      ? `${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`
-                      : undefined,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ");
+                  const date = modified?.toLocaleDateString(undefined, {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  });
                   return (
                     <List.Item.Detail.Metadata>
+                      {/* Raycast top-aligns rows in a fixed-height block; two
+                          empty rows push the real ones to the bottom. */}
+                      <List.Item.Detail.Metadata.Label title="" text="" />
+                      <List.Item.Detail.Metadata.Label title="" text="" />
                       <List.Item.Detail.Metadata.Label
                         title="Where"
                         text={displayPath(dirname(file.path))}
                       />
-                      <List.Item.Detail.Metadata.Label
-                        title="Kind"
-                        text={kind}
-                      />
-                      <List.Item.Detail.Metadata.Label
-                        title="Size"
-                        text={
-                          size === undefined
-                            ? "—"
-                            : size < 1024
-                              ? formatSize(size)
-                              : `${formatSize(size)} (${size.toLocaleString()} bytes)`
-                        }
-                      />
-                      <List.Item.Detail.Metadata.Label
-                        title="Modified"
-                        text={modified ? modified.toLocaleString() : "—"}
-                      />
+                      <List.Item.Detail.Metadata.TagList title="">
+                        <List.Item.Detail.Metadata.TagList.Item
+                          text={describeKind(file.path, file.kind)}
+                          color={Color.Blue}
+                        />
+                        {size !== undefined && (
+                          <List.Item.Detail.Metadata.TagList.Item
+                            text={formatSize(size)}
+                            color={Color.SecondaryText}
+                          />
+                        )}
+                        {date && (
+                          <List.Item.Detail.Metadata.TagList.Item
+                            text={date}
+                            color={Color.SecondaryText}
+                          />
+                        )}
+                        {preview?.details && (
+                          <List.Item.Detail.Metadata.TagList.Item
+                            text={preview.details}
+                            color={Color.SecondaryText}
+                          />
+                        )}
+                        {file.matches && (
+                          <List.Item.Detail.Metadata.TagList.Item
+                            text={`${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`}
+                            color={Color.Green}
+                          />
+                        )}
+                      </List.Item.Detail.Metadata.TagList>
                     </List.Item.Detail.Metadata>
                   );
                 })()}

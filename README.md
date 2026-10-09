@@ -7,7 +7,7 @@ Fast, local file search in Raycast, powered by [noahdunnagan/fsearch](https://gi
 - Nine file-type choices, folder scoping, and search-inside-folder actions.
 - Fuzzy filename search with original ranking; sort loaded results by name, modification date, or size.
 - A split view previews the selected file alongside its metadata: images, text and code with syntax highlighting, the text of Word, RTF, and OpenDocument files, archive listings, property lists, and Quick Look thumbnails of PDFs, spreadsheets, presentations, HEIC and other images, videos, and fonts. Spotlight metadata adds page counts, durations, and pixel sizes. Content searches show line-numbered matches.
-- Preview text is limited to 10 lines; inline PNG, JPEG, GIF, and WebP previews are limited to 20 MiB. Thumbnails are cached in the extension's support folder and generated with a 4-second limit. Only the selected file is read.
+- Preview text is cut to what fits the pane without scrolling; inline PNG, JPEG, GIF, and WebP previews are limited to 20 MiB. Thumbnails are cached in the extension's support folder and generated with a 4-second limit. Only the selected file is read.
 - Shell wildcards are translated: `*.docx` searches `ext:docx`, and `report*.pdf` searches `report ext:pdf`.
 - Native file icons, readable sizes and dates, Quick Look, Open With, Finder reveal, copy actions, and Move to Trash with confirmation.
 - Stable results while typing, cancellation of obsolete requests, and automatic retry while the daemon starts or builds its first index.
@@ -88,7 +88,7 @@ The type menu adds a filter to the query. Leave it on Everything when writing yo
 | ⌘ ⇧ M    | Show more results                 |
 | ⌘ ⇧ R    | Rebuild the index                 |
 
-The preview keeps four metadata rows (Where, Kind, Size, Modified); Spotlight details such as page count, duration, or pixel size join the Kind row. Raycast splits the pane at a fixed point, so the image box and the 10-line text cut are sized to the markdown area above those rows. Previews use only tools shipped with macOS: `qlmanage`, `textutil`, `unzip`, `tar`, `plutil`, and `mdls`.
+The preview keeps four metadata rows (Where, Kind, Size, Modified); Spotlight details such as page count, duration, or pixel size join the Kind row. Raycast splits the pane at a fixed point, so the image box and the text cut are sized to the markdown area above those rows. Previews use only tools shipped with macOS: `qlmanage`, `textutil`, `unzip`, `tar`, `plutil`, and `mdls`.
 
 ## Development
 
