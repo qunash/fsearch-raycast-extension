@@ -10,7 +10,11 @@ import {
   resolveBinary,
   SearchError,
   searchFiles,
+  setSocketPath,
 } from "../src/fsearch.ts";
+
+// Never touch a real daemon: every request goes through the mock executables.
+setSocketPath(null);
 
 test("preserves ranked file results, including spaces and Unicode", () => {
   const result = parseResponse(

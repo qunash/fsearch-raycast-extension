@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createConnection, type Socket } from "node:net";
 import { access, constants, readdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -17,6 +18,17 @@ export interface SearchResult {
   tookUs: number;
   complete: boolean;
   indexing: boolean;
+  /** Content search: files the index proposed, and how many were read before the budget ran out. */
+  candidates?: number;
+  read?: number;
+}
+
+/** Content-search tuning; ignored by name searches. */
+export interface ContentOptions {
+  /** Milliseconds to spend reading candidate files (daemon default 250). */
+  budgetMs?: number;
+  /** Matches reported per file (daemon default 5). */
+  perFile?: number;
 }
 
 export interface IndexStatus {
@@ -53,6 +65,8 @@ export const DEFAULT_BINARY = "~/.local/bin/fsearch";
 export const INDEX_DIR = join(homedir(), "Library/Application Support/FSearch");
 /** Home folders macOS gates behind Full Disk Access that people search most. */
 export const PROTECTED_FOLDERS = ["Desktop", "Documents", "Downloads"] as const;
+/** The daemon's JSON-lines socket. `null` forces the `fsearch stdio` fallback (tests). */
+let socketPath: string | null = join(INDEX_DIR, "fsearch.sock");
 const REQUEST_TIMEOUT_MS = 20000;
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 
@@ -176,6 +190,12 @@ export function parseResponse(stdout: string): SearchResult {
     tookUs: data.took_us,
     complete: !("complete" in data) || data.complete === true,
     indexing: "indexing" in data && Boolean(data.indexing),
+    ...("candidates" in data && typeof data.candidates === "number"
+      ? { candidates: data.candidates }
+      : {}),
+    ...("read" in data && typeof data.read === "number"
+      ? { read: data.read }
+      : {}),
   };
 }
 
@@ -284,22 +304,190 @@ function run(
   });
 }
 
+/**
+ * One connection to the daemon's socket, shared by every request. Requests
+ * are JSON lines tagged with an `id` the daemon echoes, so answers are matched
+ * even when they arrive out of order.
+ */
+class DaemonClient {
+  private nextId = 1;
+  private buffer = "";
+  private readonly pending = new Map<
+    number,
+    { resolve: (line: string) => void; reject: (error: Error) => void }
+  >();
+
+  private constructor(private readonly socket: Socket) {
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk: string) => this.receive(chunk));
+    socket.on("error", (error) => this.fail(error));
+    socket.on("close", () =>
+      this.fail(new Error("FSearch closed the connection.")),
+    );
+  }
+
+  static connect(path: string): Promise<DaemonClient> {
+    return new Promise((resolve, reject) => {
+      const socket = createConnection({ path });
+      socket.once("error", reject);
+      socket.once("connect", () => {
+        socket.off("error", reject);
+        resolve(new DaemonClient(socket));
+      });
+    });
+  }
+
+  request(
+    payload: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const id = this.nextId++;
+      const finish = (outcome: () => void) => {
+        this.pending.delete(id);
+        clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+        outcome();
+      };
+      const onAbort = () =>
+        finish(() =>
+          reject(signal.reason ?? new DOMException("Aborted", "AbortError")),
+        );
+      const timer = setTimeout(
+        () =>
+          finish(() =>
+            reject(
+              new SearchError(
+                "timeout",
+                "FSearch did not answer in time. It may still be starting or busy indexing.",
+              ),
+            ),
+          ),
+        REQUEST_TIMEOUT_MS,
+      );
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+      this.pending.set(id, {
+        resolve: (line) => finish(() => resolve(line)),
+        reject: (error) => finish(() => reject(error)),
+      });
+      this.socket.write(JSON.stringify({ ...payload, id }) + "\n");
+    });
+  }
+
+  close(): void {
+    this.socket.destroy();
+  }
+
+  private receive(chunk: string): void {
+    this.buffer += chunk;
+    let newline = this.buffer.indexOf("\n");
+    while (newline !== -1) {
+      const line = this.buffer.slice(0, newline);
+      this.buffer = this.buffer.slice(newline + 1);
+      newline = this.buffer.indexOf("\n");
+      let id: unknown;
+      try {
+        id = (JSON.parse(line) as { id?: unknown }).id;
+      } catch {
+        continue; // parseResponse reports unreadable lines; nothing to match here.
+      }
+      if (typeof id !== "number") continue;
+      this.pending.get(id)?.resolve(line);
+    }
+  }
+
+  private fail(cause: Error): void {
+    if (client === this) client = null;
+    for (const request of this.pending.values()) {
+      request.reject(
+        new SearchError(
+          "daemon",
+          `Lost the connection to FSearch. ${cause.message}`,
+          {
+            cause,
+          },
+        ),
+      );
+    }
+    this.pending.clear();
+  }
+}
+
+let client: DaemonClient | null = null;
+let connecting: Promise<DaemonClient | null> | null = null;
+
+/** Points the client at another socket, or `null` to always go through `fsearch stdio`. */
+export function setSocketPath(path: string | null): void {
+  socketPath = path;
+  client?.close();
+  client = null;
+  connecting = null;
+}
+
+/** The shared connection, or `null` when no daemon is listening. */
+async function connectDaemon(): Promise<DaemonClient | null> {
+  if (!socketPath) return null;
+  if (client) return client;
+  connecting ??= DaemonClient.connect(socketPath).then(
+    (connected) => {
+      client = connected;
+      connecting = null;
+      return connected;
+    },
+    () => {
+      connecting = null;
+      return null;
+    },
+  );
+  return connecting;
+}
+
+/**
+ * Sends one request to the daemon. The socket is used when the daemon is up;
+ * otherwise `fsearch stdio` answers, which also starts the daemon so the
+ * following requests take the socket.
+ */
+async function exchange(
+  binary: string,
+  payload: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<string> {
+  await ensureExecutable(binary);
+  const daemon = await connectDaemon();
+  if (daemon) return daemon.request(payload, signal);
+  return run(binary, ["stdio"], JSON.stringify(payload) + "\n", signal);
+}
+
+const CONTENT_FILTERS = ["grep:", "regex:", "sym:", "content:", "symbol:"];
+
 export async function searchFiles(
   binaryPath: string,
   query: string,
   root: string | undefined,
   limit: number,
   signal: AbortSignal,
+  content: ContentOptions = {},
 ): Promise<SearchResult> {
   const binary = resolveBinary(binaryPath);
-  await ensureExecutable(binary);
-  const request = JSON.stringify({
+  const isContentSearch = CONTENT_FILTERS.some((filter) =>
+    query.includes(filter),
+  );
+  const request = {
     q: query,
     limit,
     ...(root ? { in: root } : {}),
-  });
-  const stdout = await run(binary, ["stdio"], request + "\n", signal);
-  return parseResponse(stdout);
+    ...(isContentSearch && content.budgetMs
+      ? { budget_ms: content.budgetMs }
+      : {}),
+    ...(isContentSearch && content.perFile
+      ? { per_file: content.perFile }
+      : {}),
+  };
+  return parseResponse(await exchange(binary, request, signal));
 }
 
 /** Reads daemon statistics, including whether protected folders are indexed. */
@@ -308,8 +496,7 @@ export async function getStatus(
   signal: AbortSignal,
 ): Promise<IndexStatus> {
   const binary = resolveBinary(binaryPath);
-  await ensureExecutable(binary);
-  return parseStatus(await run(binary, ["status"], undefined, signal));
+  return parseStatus(await exchange(binary, { op: "status" }, signal));
 }
 
 /**
@@ -323,7 +510,6 @@ export async function findUnindexedProtectedFolders(
   signal: AbortSignal,
 ): Promise<string[]> {
   const binary = resolveBinary(binaryPath);
-  await ensureExecutable(binary);
   const unindexed: string[] = [];
   for (const name of PROTECTED_FOLDERS) {
     const folder = join(homedir(), name);
@@ -334,9 +520,8 @@ export async function findUnindexedProtectedFolders(
       continue; // Missing folder, or Raycast itself lacks access: nothing to report.
     }
     if (!entries.some((entry) => !entry.startsWith("."))) continue;
-    const request = JSON.stringify({ q: "", limit: 1, in: folder });
     const result = parseResponse(
-      await run(binary, ["stdio"], request + "\n", signal),
+      await exchange(binary, { q: "", limit: 1, in: folder }, signal),
     );
     if (result.files.length === 0) unindexed.push(folder);
   }
@@ -374,6 +559,8 @@ function listProcesses(): Promise<{ pid: number; command: string }[]> {
 export async function rebuildIndex(binaryPath: string): Promise<void> {
   const binary = resolveBinary(binaryPath);
   await ensureExecutable(binary);
+  client?.close();
+  client = null;
   // Only the daemon we manage: an exact "<fsearch binary> serve" command line.
   const daemons = (await listProcesses()).filter(
     (process) =>

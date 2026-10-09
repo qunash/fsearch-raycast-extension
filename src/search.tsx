@@ -62,6 +62,15 @@ import {
 } from "./fsearch";
 
 const MAX_LIMIT = 500;
+/** Content-search read budget: the daemon's 250 ms default grows with each Show More. */
+const CONTENT_BUDGET_MS = 250;
+const CONTENT_BUDGET_MAX_MS = 2000;
+function contentBudgetMs(limit: number, defaultLimit: number): number {
+  return Math.min(
+    CONTENT_BUDGET_MAX_MS,
+    Math.round((CONTENT_BUDGET_MS * limit) / Math.max(1, defaultLimit)),
+  );
+}
 const LOAD_MORE_STEP = 100;
 const PREVIEW_BYTES = 32 * 1024;
 const PREVIEW_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -718,6 +727,9 @@ export default function Search(props: LaunchProps) {
           scope || undefined,
           limit,
           controller.signal,
+          // Show More asks for a longer read of the content candidates, so a
+          // search that came back partial has a chance to finish.
+          { budgetMs: contentBudgetMs(limit, defaultLimit) },
         );
         if (!controller.signal.aborted) {
           setResult(response);
@@ -1171,7 +1183,12 @@ export default function Search(props: LaunchProps) {
     if (!result) return undefined;
     const parts: string[] = [];
     if (loading) parts.push("Updating…");
-    else if (!result.complete) parts.push("Partial results");
+    else if (!result.complete)
+      parts.push(
+        result.candidates && result.read !== undefined
+          ? `Read ${result.read} of ${result.candidates} files`
+          : "Partial results",
+      );
     else if (result.indexing) parts.push("Indexing content");
     else if (sortedFiles.length >= MAX_LIMIT) parts.push("500-result limit");
     if (effectiveSort !== "relevance") {
