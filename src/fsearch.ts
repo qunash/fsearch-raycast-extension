@@ -466,6 +466,11 @@ function resetClient(): void {
   connecting = null;
 }
 
+/** Closes the daemon connection so a one-shot process, such as an AI tool, can exit. */
+export function disconnect(): void {
+  resetClient();
+}
+
 /** The shared connection, or `null` when no daemon is listening. */
 async function connectDaemon(): Promise<DaemonClient | null> {
   if (!socketPath) return null;

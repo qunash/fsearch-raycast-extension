@@ -32,11 +32,12 @@ The extension finds fsearch in `~/.local/bin`, `~/.cargo/bin`, `/opt/homebrew/bi
 
 Words of five or more letters forgive one typo. `'exact`, `^prefix`, `suffix$`, `!exclude`, and `"quoted phrases"` tighten a match. `mtime:` takes s, m, h, d, w, mo, y. Shell wildcards work: `*.docx`, `report*.pdf`. Content search is smart-case.
 
-The type menu adds a `type:` or `kind:` filter; leave it on Everything when writing your own. The search folder overrides `in:`; choose Entire Mac to let the query decide. Sorting applies to loaded results; **Show More** (⌘ ⇧ M) loads up to 500 and raises the content-search read budget when results are partial.
+The type menu adds a `type:` or `kind:` filter; leave it on Everything when writing your own. The search folder overrides `in:`; choose Entire Mac to let the query decide. Sorting applies to loaded results. Scrolling to the end loads more, up to 500, and raises the content-search read budget when results are partial.
 
 ## Features
 
-- Home screen with saved searches (⌘ ⇧ S), quick searches, and places.
+- Home screen with saved searches (⌘ S), quick searches, and places. A saved search can become a Quicklink or a deeplink for a hotkey.
+- Raycast AI tool: ask Raycast AI to find files and it calls fsearch with the same query syntax.
 - Preview pane (⌘ D): images, text and code, Word, RTF, and OpenDocument text, archive listings, property lists, and Quick Look thumbnails of PDFs, Office files, HEIC, video, and fonts, with page counts, durations, and pixel sizes. Text previews open at the first matching line.
 - Content matches with line numbers.
 - Open, Open With, Reveal in Finder, Quick Look, copy the file, its name, or its path, paste it into the front Finder window or into the app behind Raycast, Move to Trash.
@@ -59,12 +60,12 @@ The type menu adds a `type:` or `kind:` filter; leave it on Everything when writ
 | ⌃ X      | Move to Trash                 |
 | ⌘ D      | Toggle preview                |
 | ⌘ R      | Refresh                       |
-| ⌘ ⇧ S    | Save or remove search         |
+| ⌘ S      | Save or remove search         |
 | ⌘ ⇧ H    | Home                          |
 | ⌘ ⇧ F    | Choose folder                 |
 | ⌘ F      | Search selected file's folder |
-| ⌘ ⇧ O    | Sort                          |
-| ⌘ ⇧ M    | Show more                     |
+| ⌘ ⇧ S    | Sort                          |
+| ⌘ ⇧ O    | Open with                     |
 | ⌘ ⇧ R    | Rebuild index                 |
 
 ## Preferences
@@ -73,7 +74,7 @@ The type menu adds a `type:` or `kind:` filter; leave it on Everything when writ
 | ------------------ | ------------------------------------------------------------- |
 | FSearch Executable | Optional path to the binary. Empty looks in the usual places. |
 | Search Folder      | Default folder for every search.                              |
-| Maximum Results    | Results per request before Show More.                         |
+| Maximum Results    | Results per page.                                             |
 | Results            | Whether the preview pane is open by default.                  |
 
 ## Privacy

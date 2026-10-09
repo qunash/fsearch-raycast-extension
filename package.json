@@ -30,6 +30,27 @@
       ]
     }
   ],
+  "tools": [
+    {
+      "name": "search-files",
+      "title": "Search Files",
+      "description": "Finds files and folders on this Mac by name, or by text inside them, using fsearch's query syntax."
+    }
+  ],
+  "ai": {
+    "instructions": "Queries use fsearch syntax: plain words match file names with typo tolerance; ext:pdf, type:image, in:~/Downloads, mtime:<7d, size:>100mb filter; grep:text or regex:pattern search inside files. Prefer a short query plus filters. Paths in results are absolute; show them with the home folder shortened to ~ when listing for the user.",
+    "evals": [
+      {
+        "input": "@fsearch find PDF invoices in my Downloads folder"
+      },
+      {
+        "input": "@fsearch which files mention 'quarterly budget'?"
+      },
+      {
+        "input": "@fsearch show the largest video files on my Mac"
+      }
+    ]
+  },
   "preferences": [
     {
       "name": "binaryPath",
@@ -72,7 +93,7 @@
       "name": "showDetails",
       "title": "Results",
       "label": "Show the preview pane by default",
-      "description": "Open results in a split view with a file preview and metadata. Toggle it any time with \u2318 D.",
+      "description": "Open results in a split view with a file preview and metadata. Toggle it any time with ⌘ D.",
       "type": "checkbox",
       "required": false,
       "default": true
@@ -88,7 +109,7 @@
     "lint": "ray lint"
   },
   "dependencies": {
-    "@raycast/api": "^2.7.2",
+    "@raycast/api": "^2.7.3",
     "react": "^19.0.0"
   },
   "devDependencies": {

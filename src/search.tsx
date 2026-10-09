@@ -11,6 +11,7 @@ import {
   getFrontmostApplication,
   getPreferenceValues,
   Icon,
+  Keyboard,
   List,
   LaunchProps,
   LocalStorage,
@@ -76,7 +77,7 @@ import {
 import { pasteFileToFinder } from "./applescript";
 
 const MAX_LIMIT = 500;
-/** Content-search read budget: the daemon's 250 ms default grows with each Show More. */
+/** Content-search read budget: the daemon's 250 ms default grows with each page. */
 const CONTENT_BUDGET_MS = 250;
 const CONTENT_BUDGET_MAX_MS = 2000;
 function contentBudgetMs(limit: number, defaultLimit: number): number {
@@ -228,7 +229,9 @@ Words of five or more letters forgive one typo. \`'exact\`, \`^prefix\`, \`suffi
 
 ## Shortcuts
 
-**⏎** open · **⌘ ⏎** reveal in Finder · **⌘ Y** Quick Look · **⌘ ⇧ C** copy file · **⌘ ⇧ V** paste file to Finder · **⌘ ⌥ C** copy name · **⌘ ⌃ C** copy path · **⌘ ⌥ V** / **⌘ ⌃ V** paste file or path to the app behind Raycast · **⌃ X** trash · **⌘ D** preview pane · **⌘ ⇧ S** save search · **⌘ ⇧ H** home · **⌘ ⇧ F** choose folder · **⌘ F** search this folder · **⌘ ⇧ O** sort · **⌘ ⇧ M** show more (up to 500) · **⌘ ⇧ R** rebuild index
+**⏎** open · **⌘ ⏎** reveal in Finder · **⌘ Y** Quick Look · **⌘ ⇧ C** copy file · **⌘ ⇧ V** paste file to Finder · **⌘ ⌥ C** copy name · **⌘ ⌃ C** copy path · **⌘ ⌥ V** / **⌘ ⌃ V** paste file or path to the app behind Raycast · **⌃ X** trash · **⌘ ⇧ O** open with · **⌘ D** preview pane · **⌘ S** save search · **⌘ ⇧ H** home · **⌘ ⇧ F** choose folder · **⌘ F** search this folder · **⌘ ⇧ S** sort · **⌘ ⇧ R** rebuild index
+
+Scroll to the end of the results to load more, up to 500. A saved search can become a Quicklink, and Raycast AI can call **Search Files** with the same query syntax.
 
 ## Full Disk Access
 
@@ -585,15 +588,36 @@ async function previewBody(
   return { markdown: codeBlock(text, languageFor(path)) };
 }
 
-export default function Search(props: LaunchProps) {
+/** A link that reopens the command with this search, for Quicklinks and hotkeys. */
+function deeplink(search: SavedSearch): string {
+  const context = encodeURIComponent(JSON.stringify(search));
+  return `raycast://extensions/${environment.ownerOrAuthorName}/${environment.extensionName}/${environment.commandName}?context=${context}`;
+}
+
+function searchTitle(search: SavedSearch): string {
+  const type = fileTypes.find((type) => type.value === search.filter)?.title;
+  return [
+    search.query || type || "All Files",
+    search.query && type !== "Everything" ? type : undefined,
+    search.scope ? displayPath(search.scope) : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+export default function Search(
+  props: LaunchProps<{ launchContext: Partial<SavedSearch> }>,
+) {
   const preferences = getPreferenceValues<Preferences.Search>();
   const binaryPath = preferences.binaryPath?.trim() ?? "";
   const defaultLimit = Number(preferences.resultLimit) || 50;
   const defaultScope = preferences.searchRoot?.trim() || "";
+  // Quicklinks and deeplinks carry a saved search in the launch context.
+  const launch = props.launchContext ?? {};
 
-  const [query, setQuery] = useState(props.fallbackText ?? "");
-  const [filter, setFilter] = useState("");
-  const [scope, setScope] = useState(defaultScope);
+  const [query, setQuery] = useState(launch.query ?? props.fallbackText ?? "");
+  const [filter, setFilter] = useState(launch.filter ?? "");
+  const [scope, setScope] = useState(launch.scope ?? defaultScope);
   const [sort, setSort] = useState("relevance");
   const [limit, setLimit] = useState(defaultLimit);
   const [result, setResult] = useState<SearchResult>();
@@ -805,7 +829,7 @@ export default function Search(props: LaunchProps) {
           scope || undefined,
           limit,
           controller.signal,
-          // Show More asks for a longer read of the content candidates, so a
+          // Each page asks for a longer read of the content candidates, so a
           // search that came back partial has a chance to finish.
           { budgetMs: contentBudgetMs(limit, defaultLimit) },
         );
@@ -892,13 +916,14 @@ export default function Search(props: LaunchProps) {
     sortedFiles.find((file) => file.path === selectedPath) ?? sortedFiles[0];
   const previewPath = active && showDetails ? selectedFile?.path : undefined;
   const selectedMatches = selectedFile?.matches;
+  // Scrolling to the end asks for more results; for a partial content
+  // search the larger limit also buys a longer read budget.
   const canLoadMore =
     active &&
     result !== undefined &&
     !loading &&
-    sortedFiles.length >= limit &&
+    (sortedFiles.length >= limit || !result.complete) &&
     limit < MAX_LIMIT;
-  const nextLimit = Math.min(limit + LOAD_MORE_STEP, MAX_LIMIT);
 
   useEffect(() => {
     let disposed = false;
@@ -995,6 +1020,7 @@ export default function Search(props: LaunchProps) {
         title: "Move to Trash",
         style: Alert.ActionStyle.Destructive,
       },
+      rememberUserChoice: true,
     });
     if (!confirmed) return;
     try {
@@ -1135,20 +1161,21 @@ export default function Search(props: LaunchProps) {
 
   const searchActions = (
     <ActionPanel.Section title="Search">
-      {canLoadMore && (
-        <Action
-          title={`Load More Results (Up to ${nextLimit})`}
-          icon={Icon.PlusCircle}
-          shortcut={{ modifiers: ["cmd", "shift"], key: "m" }}
-          onAction={loadMore}
-        />
-      )}
       {active && savedReady && (
         <Action
           title={isSaved ? "Remove Saved Search" : "Save This Search"}
           icon={isSaved ? Icon.StarDisabled : Icon.Star}
-          shortcut={{ modifiers: ["cmd", "shift"], key: "s" }}
+          shortcut={Keyboard.Shortcut.Common.Save}
           onAction={toggleSaved}
+        />
+      )}
+      {active && (
+        <Action.CreateQuicklink
+          title="Create Quicklink for This Search"
+          quicklink={{
+            name: `FSearch: ${searchTitle(currentSearch)}`,
+            link: deeplink(currentSearch),
+          }}
         />
       )}
       <ActionPanel.Submenu
@@ -1176,7 +1203,7 @@ export default function Search(props: LaunchProps) {
         <ActionPanel.Submenu
           title="Sort Results"
           icon={Icon.List}
-          shortcut={{ modifiers: ["cmd", "shift"], key: "o" }}
+          shortcut={{ modifiers: ["cmd", "shift"], key: "s" }}
         >
           {sorts
             .filter(
@@ -1212,7 +1239,7 @@ export default function Search(props: LaunchProps) {
       <Action
         title="Refresh Results"
         icon={Icon.ArrowClockwise}
-        shortcut={{ modifiers: ["cmd"], key: "r" }}
+        shortcut={Keyboard.Shortcut.Common.Refresh}
         onAction={() => {
           setAutoRetries(0);
           setRetry((value) => value + 1);
@@ -1342,6 +1369,11 @@ export default function Search(props: LaunchProps) {
   return (
     <List
       isLoading={loading}
+      pagination={{
+        pageSize: LOAD_MORE_STEP,
+        hasMore: canLoadMore,
+        onLoadMore: loadMore,
+      }}
       filtering={false}
       isShowingDetail={active && showDetails && sortedFiles.length > 0}
       navigationTitle={scope ? `Search in ${displayPath(scope)}` : "FSearch"}
@@ -1462,11 +1494,22 @@ export default function Search(props: LaunchProps) {
                         icon={Icon.MagnifyingGlass}
                         onAction={() => startSearch(item)}
                       />
+                      <Action.CreateQuicklink
+                        quicklink={{
+                          name: `FSearch: ${searchTitle(item)}`,
+                          link: deeplink(item),
+                        }}
+                      />
+                      <Action.CopyToClipboard
+                        title="Copy Deeplink"
+                        content={deeplink(item)}
+                        shortcut={Keyboard.Shortcut.Common.CopyDeeplink}
+                      />
                       <Action
                         title="Remove Saved Search"
                         icon={Icon.StarDisabled}
                         style={Action.Style.Destructive}
-                        shortcut={{ modifiers: ["ctrl"], key: "x" }}
+                        shortcut={Keyboard.Shortcut.Common.Remove}
                         onAction={() =>
                           persistSaved(
                             saved.filter((entry) => entry !== item),
@@ -1790,13 +1833,16 @@ export default function Search(props: LaunchProps) {
                       shortcut={{ modifiers: ["cmd"], key: "return" }}
                     />
                     <Action.ToggleQuickLook
-                      shortcut={{ modifiers: ["cmd"], key: "y" }}
+                      shortcut={Keyboard.Shortcut.Common.ToggleQuickLook}
                     />
-                    <Action.OpenWith path={file.path} />
+                    <Action.OpenWith
+                      path={file.path}
+                      shortcut={Keyboard.Shortcut.Common.OpenWith}
+                    />
                     <Action.CopyToClipboard
                       title="Copy File"
                       content={{ file: file.path }}
-                      shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
+                      shortcut={Keyboard.Shortcut.Common.Copy}
                     />
                     <Action
                       title="Paste File to Finder"
@@ -1815,12 +1861,12 @@ export default function Search(props: LaunchProps) {
                     <Action.CopyToClipboard
                       title="Copy Name"
                       content={basename(file.path)}
-                      shortcut={{ modifiers: ["cmd", "opt"], key: "c" }}
+                      shortcut={Keyboard.Shortcut.Common.CopyName}
                     />
                     <Action.CopyToClipboard
                       title="Copy Path"
                       content={file.path}
-                      shortcut={{ modifiers: ["cmd", "ctrl"], key: "c" }}
+                      shortcut={Keyboard.Shortcut.Common.CopyPath}
                     />
                     {frontApp && (
                       <Action.Paste
@@ -1855,7 +1901,7 @@ export default function Search(props: LaunchProps) {
                       title="Move to Trash"
                       icon={Icon.Trash}
                       style={Action.Style.Destructive}
-                      shortcut={{ modifiers: ["ctrl"], key: "x" }}
+                      shortcut={Keyboard.Shortcut.Common.Remove}
                       onAction={() => moveToTrash(file)}
                     />
                   </ActionPanel.Section>
@@ -1866,30 +1912,6 @@ export default function Search(props: LaunchProps) {
             />
           ))}
         </List.Section>
-      )}
-      {canLoadMore && (
-        <List.Item
-          id="show-more"
-          title="Show More"
-          subtitle={`Up to ${nextLimit} results`}
-          icon={Icon.PlusCircle}
-          detail={
-            <List.Item.Detail
-              markdown={`## Showing the first ${sortedFiles.length} results\n\nPress **Return** or **⌘ ⇧ M** to load up to ${nextLimit}, or narrow the search with a filter or folder.`}
-            />
-          }
-          actions={
-            <ActionPanel>
-              <Action
-                title={`Load More Results (Up to ${nextLimit})`}
-                icon={Icon.PlusCircle}
-                onAction={loadMore}
-              />
-              {searchActions}
-              {helpActions}
-            </ActionPanel>
-          }
-        />
       )}
     </List>
   );
