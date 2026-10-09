@@ -65,15 +65,13 @@ const PREVIEW_BYTES = 32 * 1024;
 const PREVIEW_IMAGE_BYTES = 20 * 1024 * 1024;
 // Enough header to reach the JPEG frame marker even behind a large EXIF block.
 const IMAGE_HEADER_BYTES = 256 * 1024;
-// The detail pane is roughly half of Raycast's window and ~365pt tall at the
-// default size. Image plus two metadata rows (Where, and a tag row with kind,
-// size, and date) fill the pane so the metadata sits at the bottom, without
-// scrolling. Raycast scales wider images down.
+// Raycast splits the detail pane at a fixed point: the markdown area above is
+// capped at roughly 190pt of image height, and the metadata block below keeps
+// its size however few rows it holds. Four rows fill that block exactly.
 const PREVIEW_MAX_WIDTH = 400;
-const PREVIEW_MAX_HEIGHT = 280;
-// Text previews are cut to one screenful so the metadata line below stays
-// visible without scrolling. The full file is one Return away.
-const PREVIEW_LINES = 14;
+const PREVIEW_MAX_HEIGHT = 190;
+// Text previews are cut to what fits the markdown area, so nothing scrolls.
+const PREVIEW_LINES = 10;
 const SAVED_SEARCHES_KEY = "saved-searches";
 const FULL_DISK_ACCESS_SETTINGS =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
@@ -332,40 +330,6 @@ function previewErrorMarkdown(path: string, cause: unknown): string {
     }
   })();
   return `### Can't preview this file\n\n${reason}\n\nPress **Return** to open it or **⌘ Y** for Quick Look.`;
-}
-
-/**
- * Kind, size, date, Spotlight details, and folder as two short lines placed
- * under the preview. Raycast reserves a tall fixed block for the metadata
- * component, so the facts live in the markdown instead.
- */
-function metadataMarkdown(
-  file: SearchFile,
-  preview: FilePreview | undefined,
-): string {
-  const facts = [describeKind(file.path, file.kind)];
-  const size = file.kind === "dir" ? undefined : (preview?.size ?? file.size);
-  if (size !== undefined) facts.push(formatSize(size));
-  const modified =
-    preview?.modified ?? (file.mtime ? new Date(file.mtime * 1000) : undefined);
-  if (modified) {
-    facts.push(
-      modified.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }),
-    );
-  }
-  if (preview?.details) facts.push(preview.details);
-  if (file.matches) {
-    facts.push(
-      `${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`,
-    );
-  }
-  // Inline code renders as rounded pills in Raycast, the closest thing to tags.
-  const pills = facts.map((fact) => `\`${fact.replace(/`/g, "'")}\``);
-  return `${pills.join(" ")}\n\n${displayPath(dirname(file.path))}`;
 }
 
 async function buildPreview(
@@ -1418,7 +1382,7 @@ export default function Search(
             detail={
               <List.Item.Detail
                 isLoading={previewLoading && file.path === previewPath}
-                markdown={`${
+                markdown={
                   file.matches
                     ? file.matches
                         .map(
@@ -1430,7 +1394,53 @@ export default function Search(
                       ? filePreview.markdown
                       : // Reserve the preview height without a visible loading label.
                         `![](preview-placeholder.png?raycast-height=${PREVIEW_MAX_HEIGHT})`
-                }\n\n${metadataMarkdown(file, filePreview?.path === file.path ? filePreview : undefined)}`}
+                }
+                metadata={(() => {
+                  const preview =
+                    filePreview?.path === file.path ? filePreview : undefined;
+                  const size =
+                    file.kind === "dir"
+                      ? undefined
+                      : (preview?.size ?? file.size);
+                  const modified =
+                    preview?.modified ??
+                    (file.mtime ? new Date(file.mtime * 1000) : undefined);
+                  const kind = [
+                    describeKind(file.path, file.kind),
+                    preview?.details,
+                    file.matches
+                      ? `${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`
+                      : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
+                  return (
+                    <List.Item.Detail.Metadata>
+                      <List.Item.Detail.Metadata.Label
+                        title="Where"
+                        text={displayPath(dirname(file.path))}
+                      />
+                      <List.Item.Detail.Metadata.Label
+                        title="Kind"
+                        text={kind}
+                      />
+                      <List.Item.Detail.Metadata.Label
+                        title="Size"
+                        text={
+                          size === undefined
+                            ? "—"
+                            : size < 1024
+                              ? formatSize(size)
+                              : `${formatSize(size)} (${size.toLocaleString()} bytes)`
+                        }
+                      />
+                      <List.Item.Detail.Metadata.Label
+                        title="Modified"
+                        text={modified ? modified.toLocaleString() : "—"}
+                      />
+                    </List.Item.Detail.Metadata>
+                  );
+                })()}
               />
             }
             actions={
