@@ -70,7 +70,10 @@ const IMAGE_HEADER_BYTES = 256 * 1024;
 // size, and date) fill the pane so the metadata sits at the bottom, without
 // scrolling. Raycast scales wider images down.
 const PREVIEW_MAX_WIDTH = 400;
-const PREVIEW_MAX_HEIGHT = 300;
+const PREVIEW_MAX_HEIGHT = 280;
+// Text previews are cut to one screenful so the metadata line below stays
+// visible without scrolling. The full file is one Return away.
+const PREVIEW_LINES = 14;
 const SAVED_SEARCHES_KEY = "saved-searches";
 const FULL_DISK_ACCESS_SETTINGS =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
@@ -291,6 +294,13 @@ function quickLookHint(path: string, kind: string): string {
   return `*No inline preview for this ${describeKind(path, kind).toLowerCase()}.* Press **⌘ Y** for Quick Look.`;
 }
 
+/** Keeps the first `PREVIEW_LINES` lines of a text sample. */
+function screenful(text: string): { text: string; cut: boolean } {
+  const lines = text.replace(/\n$/, "").split("\n");
+  if (lines.length <= PREVIEW_LINES) return { text, cut: false };
+  return { text: lines.slice(0, PREVIEW_LINES).join("\n"), cut: true };
+}
+
 /** A short, specific explanation of why a file could not be read. */
 function previewErrorMarkdown(path: string, cause: unknown): string {
   const code =
@@ -322,6 +332,38 @@ function previewErrorMarkdown(path: string, cause: unknown): string {
     }
   })();
   return `### Can't preview this file\n\n${reason}\n\nPress **Return** to open it or **⌘ Y** for Quick Look.`;
+}
+
+/**
+ * Kind, size, date, Spotlight details, and folder as two short lines placed
+ * under the preview. Raycast reserves a tall fixed block for the metadata
+ * component, so the facts live in the markdown instead.
+ */
+function metadataMarkdown(
+  file: SearchFile,
+  preview: FilePreview | undefined,
+): string {
+  const facts = [describeKind(file.path, file.kind)];
+  const size = file.kind === "dir" ? undefined : (preview?.size ?? file.size);
+  if (size !== undefined) facts.push(formatSize(size));
+  const modified =
+    preview?.modified ?? (file.mtime ? new Date(file.mtime * 1000) : undefined);
+  if (modified) {
+    facts.push(
+      modified.toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }),
+    );
+  }
+  if (preview?.details) facts.push(preview.details);
+  if (file.matches) {
+    facts.push(
+      `${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`,
+    );
+  }
+  return `**${facts.join("** · ")}**\n\n${displayPath(dirname(file.path))}`;
 }
 
 async function buildPreview(
@@ -390,26 +432,30 @@ async function buildPreview(
   if (RICH_TEXT_EXTENSIONS.includes(extension)) {
     const content = await richTextContent(path, signal);
     if (content) {
-      let markdown = codeBlock(content.text);
-      if (content.truncated) {
-        markdown += "\n\n*Preview shows the beginning of the document.*";
-      }
+      const shown = screenful(content.text);
+      let markdown = codeBlock(shown.text);
+      if (shown.cut || content.truncated) markdown += "\n\n…";
       return { ...base, markdown, details: await details };
     }
   }
   if (ARCHIVE_EXTENSIONS.includes(extension)) {
     const listing = await archiveListing(path, signal);
     if (listing) {
-      let markdown = codeBlock(listing.entries.join("\n"));
-      if (listing.truncated) {
-        markdown += `\n\n*Showing the first ${listing.entries.length} entries.*`;
-      }
+      const shown = screenful(listing.entries.join("\n"));
+      let markdown = codeBlock(shown.text);
+      if (shown.cut || listing.truncated) markdown += "\n\n…";
       return { ...base, markdown };
     }
   }
   if (extension === ".plist") {
     const content = await plistContent(path, signal);
-    if (content) return { ...base, markdown: codeBlock(content) };
+    if (content) {
+      const shown = screenful(content);
+      return {
+        ...base,
+        markdown: codeBlock(shown.text) + (shown.cut ? "\n\n…" : ""),
+      };
+    }
   }
   if (
     THUMBNAIL_EXTENSIONS.includes(extension) ||
@@ -446,11 +492,9 @@ async function buildPreview(
     // Unknown binary formats and non-UTF-8 text use Quick Look instead.
     return { ...base, markdown: quickLookHint(path, "file") };
   }
-  let markdown = codeBlock(text, languageFor(path));
-  if (truncated) {
-    markdown +=
-      "\n\n*Preview shows the first 32 KiB. Open the file to read more.*";
-  }
+  const shown = screenful(text);
+  let markdown = codeBlock(shown.text, languageFor(path));
+  if (shown.cut || truncated) markdown += "\n\n…";
   return { ...base, markdown };
 }
 
@@ -1372,7 +1416,7 @@ export default function Search(
             detail={
               <List.Item.Detail
                 isLoading={previewLoading && file.path === previewPath}
-                markdown={
+                markdown={`${
                   file.matches
                     ? file.matches
                         .map(
@@ -1384,66 +1428,7 @@ export default function Search(
                       ? filePreview.markdown
                       : // Reserve the preview height without a visible loading label.
                         `![](preview-placeholder.png?raycast-height=${PREVIEW_MAX_HEIGHT})`
-                }
-                metadata={
-                  <List.Item.Detail.Metadata>
-                    <List.Item.Detail.Metadata.Label
-                      title="Where"
-                      text={displayPath(dirname(file.path))}
-                    />
-                    <List.Item.Detail.Metadata.TagList title="">
-                      <List.Item.Detail.Metadata.TagList.Item
-                        text={describeKind(file.path, file.kind)}
-                        color={Color.Blue}
-                      />
-                      {(() => {
-                        if (file.kind === "dir") return null;
-                        const size =
-                          filePreview?.path === file.path
-                            ? (filePreview.size ?? file.size)
-                            : file.size;
-                        return size === undefined ? null : (
-                          <List.Item.Detail.Metadata.TagList.Item
-                            text={formatSize(size)}
-                            color={Color.SecondaryText}
-                          />
-                        );
-                      })()}
-                      {(() => {
-                        const modified =
-                          filePreview?.path === file.path &&
-                          filePreview.modified
-                            ? filePreview.modified
-                            : file.mtime
-                              ? new Date(file.mtime * 1000)
-                              : undefined;
-                        return modified ? (
-                          <List.Item.Detail.Metadata.TagList.Item
-                            text={modified.toLocaleDateString(undefined, {
-                              year: "numeric",
-                              month: "short",
-                              day: "numeric",
-                            })}
-                            color={Color.SecondaryText}
-                          />
-                        ) : null;
-                      })()}
-                      {filePreview?.path === file.path &&
-                        filePreview.details && (
-                          <List.Item.Detail.Metadata.TagList.Item
-                            text={filePreview.details}
-                            color={Color.SecondaryText}
-                          />
-                        )}
-                      {file.matches && (
-                        <List.Item.Detail.Metadata.TagList.Item
-                          text={`${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`}
-                          color={Color.Green}
-                        />
-                      )}
-                    </List.Item.Detail.Metadata.TagList>
-                  </List.Item.Detail.Metadata>
-                }
+                }\n\n${metadataMarkdown(file, filePreview?.path === file.path ? filePreview : undefined)}`}
               />
             }
             actions={
