@@ -103,24 +103,6 @@ export const ARCHIVE_EXTENSIONS = [
   ".xz",
 ];
 
-/** Formats Quick Look plays back rather than just shows. */
-export const PLAYABLE_EXTENSIONS = [
-  ".mov",
-  ".mp4",
-  ".m4v",
-  ".mpg",
-  ".mpeg",
-  ".3gp",
-  ".mp3",
-  ".m4a",
-  ".aac",
-  ".wav",
-  ".aiff",
-  ".aif",
-  ".flac",
-  ".caf",
-];
-
 const MEDIA_EXTENSIONS = [
   ".mov",
   ".mp4",
