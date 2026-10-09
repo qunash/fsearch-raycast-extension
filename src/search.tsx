@@ -363,7 +363,9 @@ function metadataMarkdown(
       `${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`,
     );
   }
-  return `**${facts.join("** · ")}**\n\n${displayPath(dirname(file.path))}`;
+  // Inline code renders as rounded pills in Raycast, the closest thing to tags.
+  const pills = facts.map((fact) => `\`${fact.replace(/`/g, "'")}\``);
+  return `${pills.join(" ")}\n\n${displayPath(dirname(file.path))}`;
 }
 
 async function buildPreview(
