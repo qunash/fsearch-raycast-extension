@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   codeBlock,
   decodeTextSample,
@@ -15,7 +16,7 @@ import {
   languageFor,
   normalizeQuery,
 } from "../src/format.ts";
-import { formatClock } from "../src/preview.ts";
+import { folderDetails, formatClock } from "../src/preview.ts";
 
 test("formats sizes and durations for humans", () => {
   assert.equal(formatSize(0), "0 B");
@@ -163,4 +164,19 @@ test("normalizeQuery turns wildcards into fsearch filters", () => {
 test("formatClock renders durations", () => {
   assert.equal(formatClock(29.44), "0:29");
   assert.equal(formatClock(3725), "1:02:05");
+});
+
+test("folderDetails counts visible items like Finder", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "fsearch-folder-"));
+  try {
+    assert.equal(await folderDetails(dir), "Empty");
+    await writeFile(join(dir, "a.txt"), "a");
+    await writeFile(join(dir, ".DS_Store"), "");
+    assert.equal(await folderDetails(dir), "1 item");
+    await writeFile(join(dir, "b.txt"), "b");
+    assert.equal(await folderDetails(dir), "2 items");
+    assert.equal(await folderDetails(join(dir, "missing")), undefined);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

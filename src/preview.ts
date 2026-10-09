@@ -1,6 +1,14 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, open, rename, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  open,
+  readdir,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { ImageSize, imageDimensions } from "./format";
 
@@ -411,6 +419,18 @@ export async function mediaDetails(
     const title = values.get("kMDItemTitle")?.replace(/^"|"$/g, "").trim();
     if (title && title !== basename(path)) parts.push(title);
     return parts.length ? parts.join(" · ") : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The folder's item count as Finder reports it, with hidden entries left out. */
+export async function folderDetails(path: string): Promise<string | undefined> {
+  try {
+    const count = (await readdir(path)).filter(
+      (name) => !name.startsWith("."),
+    ).length;
+    return count === 0 ? "Empty" : `${count} ${count === 1 ? "item" : "items"}`;
   } catch {
     return undefined;
   }

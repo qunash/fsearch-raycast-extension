@@ -1,6 +1,6 @@
 # FSearch for Raycast
 
-Instant, typo-tolerant search of every file on your Mac, powered by [fsearch](https://github.com/noahdunnagan/fsearch). Name search takes about a millisecond; content search is indexed.
+Instant, typo-tolerant search of every file on your Mac, powered by [noahdunnagan/fsearch](https://github.com/noahdunnagan/fsearch). Name search takes about a millisecond; content search is indexed.
 
 ## Install
 

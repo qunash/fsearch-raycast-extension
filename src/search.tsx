@@ -41,6 +41,7 @@ import {
   ARCHIVE_EXTENSIONS,
   archiveListing,
   fileIcon,
+  folderDetails,
   hasMediaDetails,
   mediaDetails,
   NATIVE_IMAGE_EXTENSIONS,
@@ -177,7 +178,7 @@ interface SavedSearch {
 interface FilePreview {
   path: string;
   markdown: string;
-  /** Page count, duration, pixel size, or title from Spotlight metadata. */
+  /** Page count, duration, pixel size, or title from Spotlight metadata; item count for folders. */
   details?: string;
   size?: number;
   modified?: Date;
@@ -454,6 +455,7 @@ async function buildPreview(
     return {
       ...base,
       markdown: await iconMarkdown(path, true, info.mtimeMs, signal),
+      details: await folderDetails(path),
     };
   }
   if (!info.isFile()) {
