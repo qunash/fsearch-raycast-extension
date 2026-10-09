@@ -29,6 +29,7 @@ import {
   displayPath,
   fitPreviewSize,
   ImageSize,
+  formatDuration,
   formatSize,
   imageDimensions,
   isProtectedPath,
@@ -1086,15 +1087,21 @@ export default function Search(
     };
   })();
 
-  const resultsNote = (() => {
-    if (!result || loading) return undefined;
-    if (!result.complete)
-      return "Partial results: fsearch ran out of time. Narrow the query.";
-    if (result.indexing)
-      return "Content is still being indexed; more matches may appear.";
-    if (sortedFiles.length >= MAX_LIMIT)
-      return "Showing the first 500 results. Narrow the query to see others.";
-    return undefined;
+  const sectionSubtitle = (() => {
+    if (!result) return undefined;
+    const parts: string[] = [];
+    if (loading) parts.push("Updating…");
+    else if (!result.complete) parts.push("Partial results");
+    else if (result.indexing) parts.push("Indexing content");
+    else if (sortedFiles.length >= limit)
+      parts.push(limit < MAX_LIMIT ? "More results: ⌘⇧M" : "500-result limit");
+    if (effectiveSort !== "relevance") {
+      parts.push(
+        sorts.find((item) => item.value === effectiveSort)?.title ?? "",
+      );
+    }
+    if (!loading) parts.push(formatDuration(result.tookUs));
+    return parts.filter(Boolean).join(" · ");
   })();
 
   return (
@@ -1367,199 +1374,200 @@ export default function Search(
           </ActionPanel>
         }
       />
-      {active &&
-        result &&
-        sortedFiles.map((file) => (
-          <List.Item
-            key={file.path}
-            id={file.path}
-            title={basename(file.path) || file.path}
-            subtitle={showDetails ? undefined : displayPath(dirname(file.path))}
-            icon={{ fileIcon: file.path }}
-            quickLook={{ path: file.path, name: basename(file.path) }}
-            accessories={
-              showDetails
-                ? []
-                : file.matches
-                  ? [
-                      {
-                        tag: {
-                          value: `${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`,
-                          color: Color.Blue,
+      {active && result && (
+        <List.Section
+          title={`${sortedFiles.length} ${sortedFiles.length === 1 ? "file" : "files"}`}
+          subtitle={sectionSubtitle}
+        >
+          {sortedFiles.map((file) => (
+            <List.Item
+              key={file.path}
+              id={file.path}
+              title={basename(file.path) || file.path}
+              subtitle={
+                showDetails ? undefined : displayPath(dirname(file.path))
+              }
+              icon={{ fileIcon: file.path }}
+              quickLook={{ path: file.path, name: basename(file.path) }}
+              accessories={
+                showDetails
+                  ? []
+                  : file.matches
+                    ? [
+                        {
+                          tag: {
+                            value: `${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`,
+                            color: Color.Blue,
+                          },
                         },
-                      },
-                    ]
-                  : [
-                      {
-                        text:
-                          file.kind === "dir"
-                            ? describeKind(file.path, file.kind)
-                            : file.kind === "link"
-                              ? "Link"
-                              : file.size !== undefined
-                                ? formatSize(file.size)
-                                : "",
-                      },
-                      ...(file.mtime
-                        ? [
-                            {
-                              date: new Date(file.mtime * 1000),
-                              tooltip: `Modified ${new Date(file.mtime * 1000).toLocaleString()}`,
-                            },
-                          ]
-                        : []),
-                    ]
-            }
-            detail={
-              <List.Item.Detail
-                isLoading={previewLoading && file.path === previewPath}
-                markdown={
-                  file.matches
-                    ? file.matches
-                        .map(
-                          (match) =>
-                            `**Line ${match.line}**\n\n${codeBlock(match.text, languageFor(file.path))}`,
-                        )
-                        .join("\n\n")
-                    : filePreview?.path === file.path
-                      ? filePreview.markdown
-                      : // Reserve the preview height without a visible loading label.
-                        `![](preview-placeholder.png?raycast-height=${PREVIEW_MAX_HEIGHT})`
-                }
-                metadata={(() => {
-                  const preview =
-                    filePreview?.path === file.path ? filePreview : undefined;
-                  const size =
-                    file.kind === "dir"
-                      ? undefined
-                      : (preview?.size ?? file.size);
-                  const modified =
-                    preview?.modified ??
-                    (file.mtime ? new Date(file.mtime * 1000) : undefined);
-                  const date = modified?.toLocaleDateString(undefined, {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                  });
-                  return (
-                    <List.Item.Detail.Metadata>
-                      {/* Raycast top-aligns rows in a fixed-height block; two
+                      ]
+                    : [
+                        {
+                          text:
+                            file.kind === "dir"
+                              ? describeKind(file.path, file.kind)
+                              : file.kind === "link"
+                                ? "Link"
+                                : file.size !== undefined
+                                  ? formatSize(file.size)
+                                  : "",
+                        },
+                        ...(file.mtime
+                          ? [
+                              {
+                                date: new Date(file.mtime * 1000),
+                                tooltip: `Modified ${new Date(file.mtime * 1000).toLocaleString()}`,
+                              },
+                            ]
+                          : []),
+                      ]
+              }
+              detail={
+                <List.Item.Detail
+                  isLoading={previewLoading && file.path === previewPath}
+                  markdown={
+                    file.matches
+                      ? file.matches
+                          .map(
+                            (match) =>
+                              `**Line ${match.line}**\n\n${codeBlock(match.text, languageFor(file.path))}`,
+                          )
+                          .join("\n\n")
+                      : filePreview?.path === file.path
+                        ? filePreview.markdown
+                        : // Reserve the preview height without a visible loading label.
+                          `![](preview-placeholder.png?raycast-height=${PREVIEW_MAX_HEIGHT})`
+                  }
+                  metadata={(() => {
+                    const preview =
+                      filePreview?.path === file.path ? filePreview : undefined;
+                    const size =
+                      file.kind === "dir"
+                        ? undefined
+                        : (preview?.size ?? file.size);
+                    const modified =
+                      preview?.modified ??
+                      (file.mtime ? new Date(file.mtime * 1000) : undefined);
+                    const date = modified?.toLocaleDateString(undefined, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    });
+                    return (
+                      <List.Item.Detail.Metadata>
+                        {/* Raycast top-aligns rows in a fixed-height block; two
                           empty rows push the real ones to the bottom. */}
-                      <List.Item.Detail.Metadata.Label title="" text="" />
-                      <List.Item.Detail.Metadata.Label title="" text="" />
-                      <List.Item.Detail.Metadata.Label
-                        title="Where"
-                        text={displayPath(dirname(file.path))}
-                      />
-                      <List.Item.Detail.Metadata.TagList title="">
-                        <List.Item.Detail.Metadata.TagList.Item
-                          text={describeKind(file.path, file.kind)}
-                          color={Color.Blue}
+                        <List.Item.Detail.Metadata.Label title="" text="" />
+                        <List.Item.Detail.Metadata.Label title="" text="" />
+                        <List.Item.Detail.Metadata.Label
+                          title="Where"
+                          text={displayPath(dirname(file.path))}
                         />
-                        {size !== undefined && (
+                        <List.Item.Detail.Metadata.TagList title="">
                           <List.Item.Detail.Metadata.TagList.Item
-                            text={formatSize(size)}
-                            color={Color.SecondaryText}
+                            text={describeKind(file.path, file.kind)}
+                            color={Color.Blue}
                           />
-                        )}
-                        {date && (
-                          <List.Item.Detail.Metadata.TagList.Item
-                            text={date}
-                            color={Color.SecondaryText}
-                          />
-                        )}
-                        {preview?.details && (
-                          <List.Item.Detail.Metadata.TagList.Item
-                            text={preview.details}
-                            color={Color.SecondaryText}
-                          />
-                        )}
-                        {file.matches && (
-                          <List.Item.Detail.Metadata.TagList.Item
-                            text={`${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`}
-                            color={Color.Green}
-                          />
-                        )}
-                      </List.Item.Detail.Metadata.TagList>
-                    </List.Item.Detail.Metadata>
-                  );
-                })()}
-              />
-            }
-            actions={
-              <ActionPanel>
-                <ActionPanel.Section title={basename(file.path)}>
-                  <Action.Open
-                    title={
-                      file.kind === "dir"
-                        ? extname(file.path).toLowerCase() === ".app"
-                          ? "Launch Application"
-                          : "Open Folder"
-                        : "Open File"
-                    }
-                    target={file.path}
-                  />
-                  <Action.ShowInFinder
-                    path={file.path}
-                    shortcut={{ modifiers: ["cmd"], key: "return" }}
-                  />
-                  <Action.ToggleQuickLook
-                    shortcut={{ modifiers: ["cmd"], key: "y" }}
-                  />
-                  <Action.OpenWith path={file.path} />
-                  <Action.CopyToClipboard
-                    title="Copy Path"
-                    content={file.path}
-                    shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
-                  />
-                  <Action.CopyToClipboard
-                    title="Copy File"
-                    content={{ file: file.path }}
-                  />
-                  <Action.CopyToClipboard
-                    title="Copy Filename"
-                    content={basename(file.path)}
-                  />
-                  <Action
-                    title={
-                      file.kind === "dir"
-                        ? "Search Inside Folder"
-                        : "Search Containing Folder"
-                    }
-                    icon={Icon.Folder}
-                    shortcut={{ modifiers: ["cmd"], key: "f" }}
-                    onAction={() => {
-                      startSearch({
-                        scope:
-                          file.kind === "dir" ? file.path : dirname(file.path),
-                        query: "",
-                        filter: "",
-                      });
-                      setSelectedPath(null);
-                      setForcedSelection(null);
-                    }}
-                  />
-                  <Action
-                    title="Move to Trash"
-                    icon={Icon.Trash}
-                    style={Action.Style.Destructive}
-                    shortcut={{ modifiers: ["ctrl"], key: "x" }}
-                    onAction={() => moveToTrash(file)}
-                  />
-                </ActionPanel.Section>
-                {searchActions}
-                {helpActions}
-              </ActionPanel>
-            }
-          />
-        ))}
-      {resultsNote && (
-        <List.Item
-          id="results-note"
-          title={resultsNote}
-          icon={{ source: Icon.Info, tintColor: Color.SecondaryText }}
-          actions={<ActionPanel>{searchActions}</ActionPanel>}
-        />
+                          {size !== undefined && (
+                            <List.Item.Detail.Metadata.TagList.Item
+                              text={formatSize(size)}
+                              color={Color.SecondaryText}
+                            />
+                          )}
+                          {date && (
+                            <List.Item.Detail.Metadata.TagList.Item
+                              text={date}
+                              color={Color.SecondaryText}
+                            />
+                          )}
+                          {preview?.details && (
+                            <List.Item.Detail.Metadata.TagList.Item
+                              text={preview.details}
+                              color={Color.SecondaryText}
+                            />
+                          )}
+                          {file.matches && (
+                            <List.Item.Detail.Metadata.TagList.Item
+                              text={`${file.matches.length} ${file.matches.length === 1 ? "match" : "matches"}`}
+                              color={Color.Green}
+                            />
+                          )}
+                        </List.Item.Detail.Metadata.TagList>
+                      </List.Item.Detail.Metadata>
+                    );
+                  })()}
+                />
+              }
+              actions={
+                <ActionPanel>
+                  <ActionPanel.Section title={basename(file.path)}>
+                    <Action.Open
+                      title={
+                        file.kind === "dir"
+                          ? extname(file.path).toLowerCase() === ".app"
+                            ? "Launch Application"
+                            : "Open Folder"
+                          : "Open File"
+                      }
+                      target={file.path}
+                    />
+                    <Action.ShowInFinder
+                      path={file.path}
+                      shortcut={{ modifiers: ["cmd"], key: "return" }}
+                    />
+                    <Action.ToggleQuickLook
+                      shortcut={{ modifiers: ["cmd"], key: "y" }}
+                    />
+                    <Action.OpenWith path={file.path} />
+                    <Action.CopyToClipboard
+                      title="Copy Path"
+                      content={file.path}
+                      shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
+                    />
+                    <Action.CopyToClipboard
+                      title="Copy File"
+                      content={{ file: file.path }}
+                    />
+                    <Action.CopyToClipboard
+                      title="Copy Filename"
+                      content={basename(file.path)}
+                    />
+                    <Action
+                      title={
+                        file.kind === "dir"
+                          ? "Search Inside Folder"
+                          : "Search Containing Folder"
+                      }
+                      icon={Icon.Folder}
+                      shortcut={{ modifiers: ["cmd"], key: "f" }}
+                      onAction={() => {
+                        startSearch({
+                          scope:
+                            file.kind === "dir"
+                              ? file.path
+                              : dirname(file.path),
+                          query: "",
+                          filter: "",
+                        });
+                        setSelectedPath(null);
+                        setForcedSelection(null);
+                      }}
+                    />
+                    <Action
+                      title="Move to Trash"
+                      icon={Icon.Trash}
+                      style={Action.Style.Destructive}
+                      shortcut={{ modifiers: ["ctrl"], key: "x" }}
+                      onAction={() => moveToTrash(file)}
+                    />
+                  </ActionPanel.Section>
+                  {searchActions}
+                  {helpActions}
+                </ActionPanel>
+              }
+            />
+          ))}
+        </List.Section>
       )}
       {canLoadMore && (
         <List.Item

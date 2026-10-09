@@ -13,7 +13,7 @@ Fast, local file search in Raycast, powered by [noahdunnagan/fsearch](https://gi
 - Stable results while typing, cancellation of obsolete requests, and automatic retry while the daemon starts or builds its first index.
 - Full Disk Access awareness: the home screen and empty states explain when protected folders are being skipped, link to System Settings, and offer an index rebuild once access is granted.
 - A new query always starts at the top of the results instead of keeping the previous row selected.
-- Expand searches up to 500 results. A note at the end of the list explains partial results, content indexing, and the 500-result limit.
+- Expand searches up to 500 results. The results header shows the count, query latency, sort order, and notes on partial results, content indexing, and the 500-result limit.
 - A custom F-in-a-magnifying-glass icon and an in-app search guide.
 
 ## Install
