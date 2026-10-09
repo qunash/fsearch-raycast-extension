@@ -302,7 +302,12 @@ function screenful(text: string): { text: string } {
   let used = 0;
   for (const line of lines) {
     const rows = Math.max(1, Math.ceil(line.length / PREVIEW_COLUMNS));
-    if (used + rows > PREVIEW_LINES) break;
+    if (used + rows > PREVIEW_LINES) {
+      // A long paragraph: keep the part that still fits, then stop.
+      const budget = (PREVIEW_LINES - used) * PREVIEW_COLUMNS;
+      if (budget > 0) kept.push(line.slice(0, budget));
+      break;
+    }
     kept.push(line);
     used += rows;
   }
