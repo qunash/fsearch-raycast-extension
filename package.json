@@ -20,14 +20,6 @@
       "subtitle": "FSearch",
       "description": "Search your Mac by filename or file contents",
       "mode": "view",
-      "arguments": [
-        {
-          "name": "query",
-          "type": "text",
-          "placeholder": "Search files",
-          "required": false
-        }
-      ],
       "keywords": [
         "file",
         "find",

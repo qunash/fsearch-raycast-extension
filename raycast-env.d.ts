@@ -28,9 +28,6 @@ declare namespace Preferences {
 
 declare namespace Arguments {
   /** Arguments passed to the `search` command */
-  export type Search = {
-  /** Search files */
-  "query": string
-}
+  export type Search = {}
 }
 

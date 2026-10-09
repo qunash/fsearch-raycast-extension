@@ -559,17 +559,13 @@ async function buildPreview(
   return { ...base, markdown: codeBlock(text, languageFor(path)) };
 }
 
-export default function Search(
-  props: LaunchProps<{ arguments: { query?: string } }>,
-) {
+export default function Search(props: LaunchProps) {
   const preferences = getPreferenceValues<Preferences>();
   const binaryPath = preferences.binaryPath?.trim() || DEFAULT_BINARY;
   const defaultLimit = Number(preferences.resultLimit) || 50;
   const defaultScope = preferences.searchRoot?.trim() || "";
 
-  const [query, setQuery] = useState(
-    props.fallbackText ?? props.arguments.query ?? "",
-  );
+  const [query, setQuery] = useState(props.fallbackText ?? "");
   const [filter, setFilter] = useState("");
   const [scope, setScope] = useState(defaultScope);
   const [sort, setSort] = useState("relevance");
