@@ -1,7 +1,7 @@
-import { execFile } from "node:child_process";
 import { access, constants } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { appleScriptString, runAppleScript } from "./applescript";
 
 export const FSEARCH_REPO = "https://github.com/noahdunnagan/fsearch";
 /** Builds fsearch from source and puts it in ~/.cargo/bin, where the extension finds it. */
@@ -35,23 +35,14 @@ export function installCommand(rust: boolean): string {
     : `${RUST_INSTALL_COMMAND} && ${FSEARCH_INSTALL_COMMAND}`;
 }
 
-/** Quotes a string for an AppleScript literal. */
-export function appleScriptString(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
 /** Opens Terminal and runs the command in a new window, so progress is visible. */
-export function runInTerminal(command: string): Promise<void> {
-  const script = [
-    'tell application "Terminal"',
-    "activate",
-    `do script ${appleScriptString(command)}`,
-    "end tell",
-  ].join("\n");
-  return new Promise((resolve, reject) => {
-    execFile("osascript", ["-e", script], (error, _stdout, stderr) => {
-      if (error) reject(new Error(stderr.trim() || error.message));
-      else resolve();
-    });
-  });
+export async function runInTerminal(command: string): Promise<void> {
+  await runAppleScript(
+    [
+      'tell application "Terminal"',
+      "activate",
+      `do script ${appleScriptString(command)}`,
+      "end tell",
+    ].join("\n"),
+  );
 }

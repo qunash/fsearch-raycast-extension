@@ -13,7 +13,8 @@ import {
   searchFiles,
   setSocketPath,
 } from "../src/fsearch.ts";
-import { appleScriptString, installCommand } from "../src/install.ts";
+import { appleScriptString } from "../src/applescript.ts";
+import { installCommand } from "../src/install.ts";
 
 // Never touch a real daemon: every request goes through the mock executables.
 setSocketPath(null);

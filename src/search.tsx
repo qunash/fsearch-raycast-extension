@@ -71,6 +71,7 @@ import {
   installCommand,
   runInTerminal,
 } from "./install";
+import { pasteFileToFinder } from "./applescript";
 
 const MAX_LIMIT = 500;
 /** Content-search read budget: the daemon's 250 ms default grows with each Show More. */
@@ -225,7 +226,7 @@ Words of five or more letters forgive one typo. \`'exact\`, \`^prefix\`, \`suffi
 
 ## Shortcuts
 
-**⏎** open · **⌘ ⏎** reveal in Finder · **⌘ Y** Quick Look · **⌘ ⇧ C** copy path · **⌃ X** trash · **⌘ D** preview pane · **⌘ ⇧ S** save search · **⌘ ⇧ H** home · **⌘ ⇧ F** choose folder · **⌘ F** search this folder · **⌘ ⇧ O** sort · **⌘ ⇧ M** show more (up to 500) · **⌘ ⇧ R** rebuild index
+**⏎** open · **⌘ ⏎** reveal in Finder · **⌘ Y** Quick Look · **⌘ ⇧ C** copy file · **⌘ ⇧ V** paste file to Finder · **⌘ ⌥ C** copy name · **⌘ ⌃ C** copy path · **⌃ X** trash · **⌘ D** preview pane · **⌘ ⇧ S** save search · **⌘ ⇧ H** home · **⌘ ⇧ F** choose folder · **⌘ F** search this folder · **⌘ ⇧ O** sort · **⌘ ⇧ M** show more (up to 500) · **⌘ ⇧ R** rebuild index
 
 ## Full Disk Access
 
@@ -941,6 +942,24 @@ export default function Search(props: LaunchProps) {
       isSaved ? "Search Removed" : "Search Saved",
       isSaved ? undefined : "Find your saved searches on the home screen.",
     );
+  };
+
+  const pasteToFinder = async (file: SearchFile) => {
+    const name = basename(file.path);
+    try {
+      const folder = await pasteFileToFinder(file.path);
+      await showToast({
+        style: Toast.Style.Success,
+        title: `Pasted ${name}`,
+        message: displayPath(folder.replace(/\/$/, "")),
+      });
+    } catch (cause) {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Could not paste to Finder",
+        message: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
   };
 
   const moveToTrash = async (file: SearchFile) => {
@@ -1755,17 +1774,25 @@ export default function Search(props: LaunchProps) {
                     />
                     <Action.OpenWith path={file.path} />
                     <Action.CopyToClipboard
-                      title="Copy Path"
-                      content={file.path}
-                      shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
-                    />
-                    <Action.CopyToClipboard
                       title="Copy File"
                       content={{ file: file.path }}
+                      shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
+                    />
+                    <Action
+                      title="Paste File to Finder"
+                      icon={Icon.Finder}
+                      shortcut={{ modifiers: ["cmd", "shift"], key: "v" }}
+                      onAction={() => pasteToFinder(file)}
                     />
                     <Action.CopyToClipboard
-                      title="Copy Filename"
+                      title="Copy Name"
                       content={basename(file.path)}
+                      shortcut={{ modifiers: ["cmd", "opt"], key: "c" }}
+                    />
+                    <Action.CopyToClipboard
+                      title="Copy Path"
+                      content={file.path}
+                      shortcut={{ modifiers: ["cmd", "ctrl"], key: "c" }}
                     />
                     <Action
                       title={
