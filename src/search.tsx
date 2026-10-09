@@ -71,11 +71,11 @@ const IMAGE_HEADER_BYTES = 256 * 1024;
 // its size however few rows it holds. Four rows fill that block exactly.
 const PREVIEW_MAX_WIDTH = 400;
 const PREVIEW_MAX_HEIGHT = 190;
-// Text previews are cut to what fits the markdown area, so nothing scrolls and
-// Raycast draws no fade. Long lines wrap, so the cut counts wrapped lines at
-// the pane's monospace width.
-const PREVIEW_LINES = 9;
-const PREVIEW_COLUMNS = 62;
+// Content-search previews open at the first match: a couple of lines of
+// context above it, then the rest of the file up to this many lines.
+const MATCH_CONTEXT_BEFORE = 2;
+const MATCH_PREVIEW_LINES = 400;
+const MATCH_PREVIEW_BYTES = 4 * 1024 * 1024;
 const SAVED_SEARCHES_KEY = "saved-searches";
 const FULL_DISK_ACCESS_SETTINGS =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
@@ -296,23 +296,48 @@ function quickLookHint(path: string, kind: string): string {
   return `*No inline preview for this ${describeKind(path, kind).toLowerCase()}.* Press **⌘ Y** for Quick Look.`;
 }
 
-/** Keeps as many leading lines as fit the preview area once wrapped. */
-function screenful(text: string): { text: string } {
-  const lines = text.replace(/\n$/, "").split("\n");
-  const kept: string[] = [];
-  let used = 0;
-  for (const line of lines) {
-    const rows = Math.max(1, Math.ceil(line.length / PREVIEW_COLUMNS));
-    if (used + rows > PREVIEW_LINES) {
-      // A long paragraph: keep the part that still fits, then stop.
-      const budget = (PREVIEW_LINES - used) * PREVIEW_COLUMNS;
-      if (budget > 0) kept.push(line.slice(0, budget));
-      break;
-    }
-    kept.push(line);
-    used += rows;
-  }
-  return { text: kept.join("\n") };
+type Match = { line: number; text: string };
+
+/** The fsearch match list as a fallback when the file itself cannot be read. */
+function matchListMarkdown(path: string, matches: Match[]): string {
+  return matches
+    .map(
+      (match) =>
+        `**Line ${match.line}**\n\n${codeBlock(match.text, languageFor(path))}`,
+    )
+    .join("\n\n");
+}
+
+/**
+ * The file from just above its first match onward, with every matching line
+ * marked in the gutter. Markdown code blocks cannot colour text, so the
+ * marker is the highlight; the snippet starts at the match so it is visible
+ * without scrolling.
+ */
+async function matchContextMarkdown(
+  path: string,
+  size: number,
+  matches: Match[],
+): Promise<string | undefined> {
+  const sample = await readHead(path, MATCH_PREVIEW_BYTES);
+  const text = decodeTextSample(sample, size > sample.length);
+  if (text === undefined) return undefined;
+  const lines = text.split("\n");
+  const matched = new Set(matches.map((match) => match.line));
+  const first = Math.min(...matched);
+  if (!Number.isFinite(first) || first > lines.length) return undefined;
+  const start = Math.max(0, first - 1 - MATCH_CONTEXT_BEFORE);
+  const end = Math.min(lines.length, start + MATCH_PREVIEW_LINES);
+  const width = String(end).length;
+  const body = lines
+    .slice(start, end)
+    .map((line, index) => {
+      const number = start + index + 1;
+      const marker = matched.has(number) ? "▶" : " ";
+      return `${marker}${String(number).padStart(width)}  ${line}`;
+    })
+    .join("\n");
+  return codeBlock(body, languageFor(path));
 }
 
 /** A short, specific explanation of why a file could not be read. */
@@ -350,7 +375,7 @@ function previewErrorMarkdown(path: string, cause: unknown): string {
 
 async function buildPreview(
   path: string,
-  hasMatches: boolean,
+  matches: Match[] | undefined,
   signal: AbortSignal,
 ): Promise<FilePreview> {
   const info = await stat(path);
@@ -391,8 +416,14 @@ async function buildPreview(
         "## Folder\n\nPress **⌘ F** to search inside, or **Return** to open in Finder.",
     };
   }
-  if (!info.isFile() || hasMatches) {
+  if (!info.isFile()) {
     return { ...base, markdown: quickLookHint(path, "file") };
+  }
+  if (matches && matches.length > 0) {
+    const markdown =
+      (await matchContextMarkdown(path, info.size, matches)) ??
+      matchListMarkdown(path, matches);
+    return { ...base, markdown };
   }
   const extension = extname(path).toLowerCase();
   const details = hasMediaDetails(path)
@@ -414,28 +445,22 @@ async function buildPreview(
   if (RICH_TEXT_EXTENSIONS.includes(extension)) {
     const content = await richTextContent(path, signal);
     if (content) {
-      const shown = screenful(content.text);
-      const markdown = codeBlock(shown.text);
-      return { ...base, markdown, details: await details };
+      return {
+        ...base,
+        markdown: codeBlock(content.text),
+        details: await details,
+      };
     }
   }
   if (ARCHIVE_EXTENSIONS.includes(extension)) {
     const listing = await archiveListing(path, signal);
     if (listing) {
-      const shown = screenful(listing.entries.join("\n"));
-      const markdown = codeBlock(shown.text);
-      return { ...base, markdown };
+      return { ...base, markdown: codeBlock(listing.entries.join("\n")) };
     }
   }
   if (extension === ".plist") {
     const content = await plistContent(path, signal);
-    if (content) {
-      const shown = screenful(content);
-      return {
-        ...base,
-        markdown: codeBlock(shown.text),
-      };
-    }
+    if (content) return { ...base, markdown: codeBlock(content) };
   }
   if (
     THUMBNAIL_EXTENSIONS.includes(extension) ||
@@ -472,9 +497,7 @@ async function buildPreview(
     // Unknown binary formats and non-UTF-8 text use Quick Look instead.
     return { ...base, markdown: quickLookHint(path, "file") };
   }
-  const shown = screenful(text);
-  const markdown = codeBlock(shown.text, languageFor(path));
-  return { ...base, markdown };
+  return { ...base, markdown: codeBlock(text, languageFor(path)) };
 }
 
 export default function Search(
@@ -708,7 +731,7 @@ export default function Search(
   const selectedFile =
     sortedFiles.find((file) => file.path === selectedPath) ?? sortedFiles[0];
   const previewPath = active && showDetails ? selectedFile?.path : undefined;
-  const hasMatches = Boolean(selectedFile?.matches);
+  const selectedMatches = selectedFile?.matches;
   const canLoadMore =
     active &&
     result !== undefined &&
@@ -732,7 +755,7 @@ export default function Search(
         await mkdir(THUMBNAIL_CACHE, { recursive: true });
         const preview = await buildPreview(
           previewPath,
-          hasMatches,
+          selectedMatches,
           controller.signal,
         );
         if (!disposed) setFilePreview(preview);
@@ -752,7 +775,7 @@ export default function Search(
       controller.abort();
       clearTimeout(timer);
     };
-  }, [previewPath, hasMatches, retry]);
+  }, [previewPath, selectedMatches, retry]);
 
   const loadMore = () => {
     setLimit((value) => Math.min(value + LOAD_MORE_STEP, MAX_LIMIT));
@@ -1426,15 +1449,10 @@ export default function Search(
                 <List.Item.Detail
                   isLoading={previewLoading && file.path === previewPath}
                   markdown={
-                    file.matches
-                      ? file.matches
-                          .map(
-                            (match) =>
-                              `**Line ${match.line}**\n\n${codeBlock(match.text, languageFor(file.path))}`,
-                          )
-                          .join("\n\n")
-                      : filePreview?.path === file.path
-                        ? filePreview.markdown
+                    filePreview?.path === file.path
+                      ? filePreview.markdown
+                      : file.matches
+                        ? matchListMarkdown(file.path, file.matches)
                         : // Reserve the preview height without a visible loading label.
                           `![](preview-placeholder.png?raycast-height=${PREVIEW_MAX_HEIGHT})`
                   }
