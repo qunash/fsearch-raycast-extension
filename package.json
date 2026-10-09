@@ -2,9 +2,9 @@
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "fsearch",
   "title": "FSearch",
-  "description": "Find files across your Mac with fuzzy search, powerful filters, and indexed content search.",
-  "icon": "fsearch-icon-v2.png",
-  "author": "anzor",
+  "description": "Instant, typo-tolerant search of every file on your Mac, with filters, content search, and previews.",
+  "icon": "icon.png",
+  "author": "qunash",
   "license": "MIT",
   "platforms": [
     "macOS"

@@ -175,39 +175,19 @@ interface FilePreview {
   modified?: Date;
 }
 
-const guide = `# Find anything. Stay in flow.
+const guide = `# FSearch
 
-FSearch brings fuzzy, whole-disk file search to Raycast. Type a filename, narrow it with a filter, or search inside text files.
+Whole-disk file search for Raycast. Type a filename, add a filter, or search inside files.
 
-## Install once
+## Install
 
-FSearch is a small Rust program. Choose **Install FSearch in Terminal** from the action panel and it builds itself in a Terminal window, installing Rust first if you do not have it. Or run the command yourself:
+Choose **Install FSearch in Terminal** from the actions. It runs \`cargo install --git https://github.com/noahdunnagan/fsearch\` in Terminal, installing Rust first if needed. The executable is found in \`~/.local/bin\`, \`~/.cargo/bin\`, and Homebrew's bin folders. The daemon starts on your first search; the first crawl takes about 20 seconds.
 
-\`\`\`sh
-cargo install --git https://github.com/noahdunnagan/fsearch
-\`\`\`
-
-Building needs Apple's Command Line Tools; macOS offers to install them when they are missing. The extension finds fsearch in \`~/.cargo/bin\`, \`~/.local/bin\`, and Homebrew's bin folders, so no preference needs changing. Set a different executable or a default search folder in extension preferences if you like.
-
-The daemon starts on your first search. Its first crawl of the disk takes around 20 seconds, and the home screen updates when it is done.
-
-## Search from Raycast’s main search
-
-Add **Search Files — FSearch** in Raycast’s **Manage Fallback Commands** (or Settings → Launcher → Fallback Commands). Then type in Raycast’s main search and choose FSearch under **Use with**. Your text carries into the file search automatically.
-
-Raycast controls this list; extensions cannot add themselves on installation.
-
-## Make it yours
-
-Save your current query, file type, and folder with **⌘ ⇧ S**. Saved searches appear on the home screen. Use **⌘ ⇧ H** to return there.
-
-Use **⌘ ⇧ F** to change the search folder, or **⌘ F** on a result to search its folder. **⌘ ⇧ O** sorts the loaded results. The preview pane shows images, text and code, the text of Word and RTF documents, archive listings, and Quick Look thumbnails of PDFs, spreadsheets, presentations, videos, fonts, and other formats. Toggle it with **⌘ D**. Content matches show their line numbers automatically. **⌘ Y** opens the full Quick Look preview. Select **Show More**, or use **⌘ ⇧ M**, to expand the result limit, up to 500 files.
-
-## A few useful searches
+## Queries
 
 | Find | Query |
 | --- | --- |
-| A filename, even with typos | \`quarterly report\` |
+| A filename, typos allowed | \`quarterly report\` |
 | PDFs | \`ext:pdf invoice\` |
 | Recent images | \`type:image mtime:<7d\` |
 | Large files | \`size:>100mb\` |
@@ -215,23 +195,25 @@ Use **⌘ ⇧ F** to change the search folder, or **⌘ F** on a result to searc
 | Text inside files | \`ext:ts grep:useEffect\` |
 | A regex inside files | \`regex:fn\\s+\\w+_dir\` |
 | Symbol definitions | \`sym:apply_dir\` |
-| Several types or extensions | \`type:image,video\` · \`ext:png,jpg\` |
-| A size or age range | \`size:1mb..10mb\` · \`mtime:2h..3d\` |
+| Several types | \`type:image,video\` · \`ext:png,jpg\` |
+| A range | \`size:1mb..10mb\` · \`mtime:2h..3d\` |
 | A regex on the name or path | \`re:^IMG_\\d+\` · \`path:node_modules\` |
 
-Use \`'exact\`, \`^prefix\`, \`suffix$\`, \`!exclude\`, and \`"quoted phrases"\` for more control. Words of five or more letters forgive one typo. \`mtime:\` takes s, m, h, d, w, mo, and y. Content search is smart-case. The filter menu adds a file-type filter to your query.
+Words of five or more letters forgive one typo. \`'exact\`, \`^prefix\`, \`suffix$\`, \`!exclude\`, and \`"quoted phrases"\` tighten a match. \`mtime:\` takes s, m, h, d, w, mo, y. Content search is smart-case.
 
-## Search protected folders
+## Shortcuts
 
-macOS hides Desktop, Documents, Downloads, and parts of Library from fsearch until it has Full Disk Access. Grant it to Raycast (the daemon it starts inherits the permission) or, for a login daemon installed with \`~/.local/bin/fsearch install --login\`, to that executable, in System Settings → Privacy & Security. Regrant after rebuilding it.
+**⏎** open · **⌘ ⏎** reveal in Finder · **⌘ Y** Quick Look · **⌘ ⇧ C** copy path · **⌃ X** trash · **⌘ D** preview pane · **⌘ ⇧ S** save search · **⌘ ⇧ H** home · **⌘ ⇧ F** choose folder · **⌘ F** search this folder · **⌘ ⇧ O** sort · **⌘ ⇧ M** show more (up to 500) · **⌘ ⇧ R** rebuild index
 
-fsearch keeps the index it built before access was granted and only replays later file changes, so those folders stay empty until you **Rebuild Index** (**⌘ ⇧ R**). The home screen points this out and offers the rebuild; a fresh crawl takes about 20 seconds.
+## Full Disk Access
 
-## At your fingertips
+macOS hides Desktop, Documents, Downloads, and parts of Library until fsearch has Full Disk Access. Grant it to Raycast in System Settings → Privacy & Security (a login daemon from \`fsearch install --login\` needs its own grant), then **Rebuild Index** so those folders are crawled.
 
-**Return** opens a file · **⌘ Return** reveals it in Finder · **⌘ Y** previews it · **⌘ ⇧ C** copies its path · **⌃ X** moves it to the Trash after confirmation.
+## Search from Raycast's main search
 
-Searches stay on your Mac. The extension talks only to your local fsearch process.
+Add **Search Files** in Raycast's **Manage Fallback Commands**. Typed text carries over.
+
+Searches stay on your Mac.
 `;
 
 function sameSearch(a: SavedSearch, b: SavedSearch) {
