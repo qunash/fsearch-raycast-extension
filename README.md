@@ -2,7 +2,7 @@
 
 Fast, local file search in Raycast, powered by [noahdunnagan/fsearch](https://github.com/noahdunnagan/fsearch).
 
-- A useful home screen with saved searches, recent files, PDFs, screenshots, large files, and favourite places.
+- A home screen with saved searches, quick searches (recent, PDFs, large files, screenshots), and favourite places.
 - Save any query with its file type and folder; run or remove it from the home screen.
 - Nine file-type choices, folder scoping, and search-inside-folder actions.
 - Fuzzy filename search with original ranking; sort loaded results by name, modification date, or size.

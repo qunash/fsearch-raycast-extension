@@ -75,28 +75,24 @@ const fileTypes = [
 const starters = [
   {
     title: "Recently Changed",
-    description: "Files edited in the last 7 days",
     query: "kind:file mtime:<7d",
     sort: "modified",
     icon: Icon.Clock,
   },
   {
     title: "PDF Documents",
-    description: "Invoices, papers, and everything in between",
     query: "ext:pdf",
     sort: "relevance",
     icon: Icon.Document,
   },
   {
     title: "Large Files",
-    description: "Files larger than 100 MB",
     query: "kind:file size:>100mb",
     sort: "size",
     icon: Icon.HardDrive,
   },
   {
     title: "Screenshots",
-    description: "Find that image you just captured",
     query: "screenshot type:image",
     sort: "modified",
     icon: Icon.Camera,
@@ -839,16 +835,16 @@ export default function Search(
           return {
             icon: Icon.Download,
             tint: Color.Orange,
-            title: "FSearch isn’t installed yet",
+            title: "FSearch Not Installed",
             description: `${error.message}\n\nOpen the guide for the one-time install steps, or point the extension at an existing executable in preferences.`,
           };
         case "indexing":
           return {
             icon: Icon.Hourglass,
             tint: Color.Blue,
-            title: "Getting to know your Mac",
+            title: "Building Index",
             description:
-              "FSearch is building its index for the first time. This takes about 20 seconds and results will appear automatically.",
+              "First-time indexing takes about 20 seconds. Results appear automatically.",
           };
         case "daemon":
           return {
@@ -860,14 +856,14 @@ export default function Search(
                 : "FSearch isn’t responding",
             description:
               autoRetries < 3
-                ? "Waking up the search daemon."
+                ? "Starting the search daemon."
                 : `${error.message}\n\nPress ⌘ R to try again, or run “fsearch status” in Terminal.`,
           };
         case "timeout":
           return {
             icon: Icon.Clock,
             tint: Color.Orange,
-            title: "FSearch is taking longer than usual",
+            title: "Search Timed Out",
             description:
               autoRetries < 3
                 ? "Retrying automatically…"
@@ -877,14 +873,14 @@ export default function Search(
           return {
             icon: Icon.QuestionMarkCircle,
             tint: Color.Orange,
-            title: "FSearch didn’t understand that query",
+            title: "Invalid Query",
             description: `${error.message}\n\nCheck the filter syntax in the guide. Valid types are doc, image, code, app, audio, video, and archive.`,
           };
         default:
           return {
             icon: Icon.ExclamationMark,
             tint: Color.Orange,
-            title: "Search needs attention",
+            title: "Search Failed",
             description: error.message,
           };
       }
@@ -903,20 +899,20 @@ export default function Search(
         icon: Icon.ArrowClockwise,
         tint: Color.Orange,
         title: scopedToProtected
-          ? `${basename(scope)} isn’t in the index yet`
-          : "No matches yet",
-        description: `FSearch has Full Disk Access now, but its index was built before access was granted, so ${unindexedNames.join(", ")} ${unindexedNames.length === 1 ? "is" : "are"} still missing. Rebuild the index (⌘ ⇧ R) to include ${unindexedNames.length === 1 ? "it" : "them"}.`,
+          ? `${basename(scope)} Not Indexed`
+          : "No Results",
+        description: `The index was built before Full Disk Access was granted, so ${unindexedNames.join(", ")} ${unindexedNames.length === 1 ? "is" : "are"} missing. Press ⌘ ⇧ R to rebuild.`,
       };
     }
     return {
       icon: Icon.MagnifyingGlass,
       tint: Color.Blue,
-      title: "No matches yet",
+      title: "No Results",
       description: fullDiskAccessMissing
         ? scopedToProtected
-          ? `${basename(scope)} is a protected folder, and FSearch doesn’t have Full Disk Access yet. Grant it in System Settings, then rebuild the index to include this folder.`
-          : "Try a shorter name, change the file type, or search a broader folder. Note: Desktop, Documents, and Downloads are skipped until FSearch has Full Disk Access."
-        : "Try a shorter name, change the file type, or search a broader folder. You can also search inside files with grep:your-text.",
+          ? `${basename(scope)} needs Full Disk Access. Grant it in System Settings, then rebuild the index.`
+          : "Desktop, Documents, and Downloads are skipped until FSearch has Full Disk Access."
+        : "",
     };
   })();
 
@@ -981,10 +977,7 @@ export default function Search(
       {!active && (
         <>
           {saved.length > 0 && (
-            <List.Section
-              title="Saved Searches"
-              subtitle="Your shortcuts to the things that matter"
-            >
+            <List.Section title="Saved Searches">
               {saved.map((item) => (
                 <List.Item
                   key={JSON.stringify(item)}
@@ -1031,15 +1024,12 @@ export default function Search(
               ))}
             </List.Section>
           )}
-          <List.Section
-            title="Jump Back In"
-            subtitle="Start typing, or take a shortcut"
-          >
+          <List.Section title="Quick Searches">
             {starters.map((starter) => (
               <List.Item
                 key={starter.query}
                 title={starter.title}
-                subtitle={starter.description}
+                subtitle={starter.query}
                 icon={{ source: starter.icon, tintColor: Color.Blue }}
                 actions={
                   <ActionPanel>
@@ -1134,7 +1124,7 @@ export default function Search(
               {fullDiskAccessMissing && (
                 <List.Item
                   title="Grant Full Disk Access"
-                  subtitle="Desktop, Documents, and Downloads are currently skipped"
+                  subtitle="Desktop, Documents, and Downloads are skipped"
                   icon={{ source: Icon.Lock, tintColor: Color.Orange }}
                   actions={
                     <ActionPanel>
@@ -1151,8 +1141,8 @@ export default function Search(
               )}
               {needsRebuild && (
                 <List.Item
-                  title="Rebuild Index to Include Protected Folders"
-                  subtitle={`${unindexedNames.join(", ")} ${unindexedNames.length === 1 ? "was" : "were"} indexed before Full Disk Access was granted`}
+                  title="Rebuild Index"
+                  subtitle={`${unindexedNames.join(", ")} not indexed`}
                   icon={{
                     source: Icon.ArrowClockwise,
                     tintColor: Color.Orange,
@@ -1387,7 +1377,7 @@ export default function Search(
         <List.Item
           id="show-more"
           title="Show More"
-          subtitle={`Load up to ${nextLimit} results`}
+          subtitle={`Up to ${nextLimit} results`}
           icon={Icon.PlusCircle}
           detail={
             <List.Item.Detail
