@@ -1177,8 +1177,7 @@ export default function Search(
     if (loading) parts.push("Updating…");
     else if (!result.complete) parts.push("Partial results");
     else if (result.indexing) parts.push("Indexing content");
-    else if (sortedFiles.length >= limit)
-      parts.push(limit < MAX_LIMIT ? "More results: ⌘⇧M" : "500-result limit");
+    else if (sortedFiles.length >= MAX_LIMIT) parts.push("500-result limit");
     if (effectiveSort !== "relevance") {
       parts.push(
         sorts.find((item) => item.value === effectiveSort)?.title ?? "",
@@ -1656,7 +1655,7 @@ export default function Search(
           icon={Icon.PlusCircle}
           detail={
             <List.Item.Detail
-              markdown={`## Showing the first ${sortedFiles.length} results\n\nPress **Return** to load up to ${nextLimit}, or narrow the search with a filter or folder.`}
+              markdown={`## Showing the first ${sortedFiles.length} results\n\nPress **Return** or **⌘ ⇧ M** to load up to ${nextLimit}, or narrow the search with a filter or folder.`}
             />
           }
           actions={
