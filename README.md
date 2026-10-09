@@ -88,7 +88,7 @@ The type menu adds a filter to the query. Leave it on Everything when writing yo
 | ⌘ ⇧ M    | Show more results                 |
 | ⌘ ⇧ R    | Rebuild the index                 |
 
-The preview keeps four metadata rows (Where, Kind, Size, Modified); Spotlight details such as page count, duration, or pixel size join the Kind row. Raycast splits the pane at a fixed point, so the image box is sized to the markdown area above those rows; text previews scroll. Previews use only tools shipped with macOS: `qlmanage`, `textutil`, `unzip`, `tar`, `plutil`, and `mdls`.
+The preview keeps four metadata rows (Where, Kind, Size, Modified); Spotlight details such as page count, duration, or pixel size join the Kind row. Raycast splits the pane at a fixed point, so the image box is sized to the markdown area above those rows; text previews scroll. Anything without a richer preview, including applications, folders, and unknown formats, shows its Finder icon, as the built-in File Search does. Previews use only tools shipped with macOS: `qlmanage`, `textutil`, `unzip`, `tar`, `plutil`, `mdls`, and `osascript` for icons.
 
 ## Development
 

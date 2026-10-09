@@ -39,6 +39,7 @@ import {
 import {
   ARCHIVE_EXTENSIONS,
   archiveListing,
+  fileIcon,
   hasMediaDetails,
   mediaDetails,
   NATIVE_IMAGE_EXTENSIONS,
@@ -292,8 +293,25 @@ function imageMarkdown(url: string, size: ImageSize | undefined): string {
   return `![File preview](${url}?raycast-width=${fit.width}&raycast-height=${fit.height})`;
 }
 
-function quickLookHint(path: string, kind: string): string {
-  return `*No inline preview for this ${describeKind(path, kind).toLowerCase()}.* Press **⌘ Y** for Quick Look.`;
+/**
+ * The file's Finder icon, as the built-in File Search shows for formats
+ * without a richer preview. Falls back to a short hint if even that fails.
+ */
+async function iconMarkdown(
+  path: string,
+  isDirectory: boolean,
+  mtimeMs: number,
+  signal: AbortSignal,
+): Promise<string> {
+  const icon = await fileIcon(
+    path,
+    isDirectory,
+    mtimeMs,
+    THUMBNAIL_CACHE,
+    signal,
+  );
+  if (icon) return imageMarkdown(fileUrl(icon.path), icon.size);
+  return "*No inline preview.* Press **⌘ Y** for Quick Look.";
 }
 
 type Match = { line: number; text: string };
@@ -415,8 +433,7 @@ async function buildPreview(
     if (extension === ".app") {
       return {
         ...base,
-        markdown:
-          "## Application\n\nPress **Return** to launch, or **⌘ Return** to reveal in Finder.",
+        markdown: await iconMarkdown(path, true, info.mtimeMs, signal),
       };
     }
     // iWork documents and other bundles are folders with a thumbnail generator.
@@ -438,12 +455,14 @@ async function buildPreview(
     }
     return {
       ...base,
-      markdown:
-        "## Folder\n\nPress **⌘ F** to search inside, or **Return** to open in Finder.",
+      markdown: await iconMarkdown(path, true, info.mtimeMs, signal),
     };
   }
   if (!info.isFile()) {
-    return { ...base, markdown: quickLookHint(path, "file") };
+    return {
+      ...base,
+      markdown: await iconMarkdown(path, false, info.mtimeMs, signal),
+    };
   }
   if (matches && matches.length > 0) {
     const markdown =
@@ -459,7 +478,7 @@ async function buildPreview(
     if (info.size > PREVIEW_IMAGE_BYTES) {
       return {
         ...base,
-        markdown: `*This image is ${formatSize(info.size)}.* Press **⌘ Y** for Quick Look.`,
+        markdown: await iconMarkdown(path, false, info.mtimeMs, signal),
       };
     }
     const header = await readHead(path, IMAGE_HEADER_BYTES);
@@ -513,7 +532,7 @@ async function buildPreview(
     }
     return {
       ...base,
-      markdown: quickLookHint(path, "file"),
+      markdown: await iconMarkdown(path, false, info.mtimeMs, signal),
       details: await details,
     };
   }
@@ -525,8 +544,11 @@ async function buildPreview(
   const truncated = info.size > sample.length;
   const text = decodeTextSample(sample, truncated);
   if (text === undefined) {
-    // Unknown binary formats and non-UTF-8 text use Quick Look instead.
-    return { ...base, markdown: quickLookHint(path, "file") };
+    // Unknown binary formats and non-UTF-8 text: show the Finder icon.
+    return {
+      ...base,
+      markdown: await iconMarkdown(path, false, info.mtimeMs, signal),
+    };
   }
   // Filename searches: open the preview where the query words first appear.
   const found = findTermLines(text, terms);

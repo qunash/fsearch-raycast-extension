@@ -220,6 +220,76 @@ export async function quickLookThumbnail(
   }
 }
 
+const ICON_PIXELS = 256;
+// JavaScript for Automation: the same icon Finder shows, rendered to a PNG.
+const ICON_SCRIPT = `
+ObjC.import("Cocoa");
+function run(argv) {
+  const [path, out, sizeArg] = argv;
+  const size = Number(sizeArg);
+  const icon = $.NSWorkspace.sharedWorkspace.iconForFile(path);
+  icon.size = $.NSMakeSize(size, size);
+  const image = $.NSImage.alloc.initWithSize($.NSMakeSize(size, size));
+  image.lockFocus;
+  icon.drawInRectFromRectOperationFraction(
+    $.NSMakeRect(0, 0, size, size), $.NSZeroRect,
+    $.NSCompositingOperationSourceOver, 1);
+  image.unlockFocus;
+  const rep = $.NSBitmapImageRep.imageRepWithData(image.TIFFRepresentation);
+  const png = rep.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $());
+  return png.writeToFileAtomically(out, true) ? "ok" : "fail";
+}`;
+
+/**
+ * The Finder icon for a file, folder, or application as a cached PNG. Plain
+ * files share one icon per extension; folders, bundles, and extensionless
+ * files are keyed by path and modification time.
+ */
+export async function fileIcon(
+  path: string,
+  isDirectory: boolean,
+  mtimeMs: number,
+  cacheDir: string,
+  signal?: AbortSignal,
+): Promise<Thumbnail | undefined> {
+  const extension = extname(path).toLowerCase();
+  const identity =
+    !isDirectory && extension && extension !== ".app"
+      ? `ext\0${extension}`
+      : `path\0${path}\0${mtimeMs}`;
+  const key = createHash("sha1").update(identity).digest("hex");
+  const cached = join(cacheDir, `icon-${key}.png`);
+  try {
+    const header = await readFile(cached);
+    return { path: cached, size: imageDimensions(header) };
+  } catch {
+    // Not cached yet.
+  }
+  const temporary = `${cached}.${process.pid}.tmp`;
+  try {
+    const output = await runTool(
+      "/usr/bin/osascript",
+      [
+        "-l",
+        "JavaScript",
+        "-e",
+        ICON_SCRIPT,
+        path,
+        temporary,
+        String(ICON_PIXELS),
+      ],
+      signal,
+    );
+    if (!output.trim().endsWith("ok")) return undefined;
+    const header = await readFile(temporary);
+    await rename(temporary, cached);
+    return { path: cached, size: imageDimensions(header) };
+  } catch {
+    await rm(temporary, { force: true });
+    return undefined;
+  }
+}
+
 /** Plain text of a Word, RTF, or OpenDocument file, limited to `TEXT_LIMIT` characters. */
 export async function richTextContent(
   path: string,
