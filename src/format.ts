@@ -81,8 +81,9 @@ export function decodeTextSample(
     return undefined;
   }
   // Allow tab, newline, vertical tab, form feed, and carriage return; reject other control codes.
+  // eslint-disable-next-line no-control-regex
   if (/[\u0001-\u0008\u000E-\u001F]/.test(text)) return undefined;
-  return text.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+  return text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
 }
 
 export interface ImageSize {

@@ -324,18 +324,26 @@ test("finds the executable in the usual install locations when no path is set", 
   );
 });
 
-test("install command adds Rust only when it is missing, and quotes for AppleScript", () => {
+test("install command runs the found cargo by path, adds Rust only when it is missing, and quotes for AppleScript", () => {
   assert.equal(
-    installCommand(true),
+    installCommand("cargo"),
     "cargo install --git https://github.com/noahdunnagan/fsearch",
   );
+  assert.equal(
+    installCommand("/opt/homebrew/bin/cargo"),
+    "/opt/homebrew/bin/cargo install --git https://github.com/noahdunnagan/fsearch",
+  );
+  assert.equal(
+    installCommand("/Users/Jo O'Neil/.cargo/bin/cargo"),
+    "'/Users/Jo O'\\''Neil/.cargo/bin/cargo' install --git https://github.com/noahdunnagan/fsearch",
+  );
   assert.match(
-    installCommand(false),
+    installCommand(undefined),
     /^curl .*sh\.rustup\.rs \| sh -s -- -y && \. "\$HOME\/\.cargo\/env" && cargo install --git/,
   );
   assert.equal(
-    appleScriptString(installCommand(false)),
-    `"${installCommand(false).replace(/"/g, '\\"')}"`,
+    appleScriptString(installCommand(undefined)),
+    `"${installCommand(undefined).replace(/"/g, '\\"')}"`,
   );
   assert.equal(appleScriptString('a\\b "c"'), '"a\\\\b \\"c\\""');
 });

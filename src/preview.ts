@@ -122,38 +122,6 @@ export const ARCHIVE_EXTENSIONS = [
   ".xz",
 ];
 
-const MEDIA_EXTENSIONS = [
-  ".mov",
-  ".mp4",
-  ".m4v",
-  ".mpg",
-  ".mpeg",
-  ".3gp",
-  ".mp3",
-  ".m4a",
-  ".aac",
-  ".wav",
-  ".aiff",
-  ".aif",
-  ".flac",
-  ".caf",
-  ".pdf",
-  ".ppt",
-  ".pptx",
-  ".doc",
-  ".docx",
-  ".key",
-  ".pages",
-  ".heic",
-  ".heif",
-  ".tiff",
-  ".tif",
-  ".bmp",
-  ".psd",
-  ".ai",
-  ".eps",
-];
-
 const TOOL_TIMEOUT_MS = 4000;
 const TEXT_LIMIT = 16 * 1024;
 const ARCHIVE_LINES = 60;
