@@ -2,6 +2,8 @@
 
 Instant, typo-tolerant search of every file on your Mac, powered by [noahdunnagan/fsearch](https://github.com/noahdunnagan/fsearch). Name search takes about a millisecond; content search is indexed.
 
+<video src="https://github.com/qunash/fsearch-raycast-extension/raw/main/promo/fsearch-promo-small.mp4" controls muted width="100%"></video>
+
 ## Install
 
 fsearch has no prebuilt binaries yet, so it is built from source once. The command's home screen offers **Install FSearch in Terminal**, which runs this in a Terminal window (installing Rust with rustup first if needed):
