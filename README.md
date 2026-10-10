@@ -4,10 +4,6 @@ Instant, typo-tolerant search of every file on your Mac, powered by [noahdunnaga
 
 ![FSearch finding files, previewing them, and answering a natural-language search](promo/fsearch-promo.gif)
 
-The full promo, with sound:
-
-https://github.com/user-attachments/assets/3f63369f-ed51-49cc-9b1e-510a0f1ec7dc
-
 ## Install
 
 fsearch has no prebuilt binaries yet, so it is built from source once. The command's home screen offers **Install FSearch in Terminal**, which runs this in a Terminal window (installing Rust with rustup first if needed):
