@@ -1,4 +1,4 @@
-# FSearch for Raycast
+# <img src="assets/icon.png" width="32" height="32" alt="" align="top"> FSearch for Raycast
 
 Instant, typo-tolerant search of every file on your Mac, powered by [noahdunnagan/fsearch](https://github.com/noahdunnagan/fsearch). Name search takes about a millisecond; content search is indexed.
 
