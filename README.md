@@ -2,7 +2,7 @@
 
 Instant, typo-tolerant search of every file on your Mac, powered by [noahdunnagan/fsearch](https://github.com/noahdunnagan/fsearch). Name search takes about a millisecond; content search is indexed.
 
-![FSearch finding files and previewing them](promo/fsearch-promo.gif)
+![FSearch finding files, previewing them, and answering a natural-language search](promo/fsearch-promo.gif)
 
 The full promo, with sound:
 
